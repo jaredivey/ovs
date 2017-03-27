@@ -339,11 +339,17 @@ ovs_be32 set_mpls_lse_values(uint8_t ttl, uint8_t tc, uint8_t bos,
 #define ETH_TYPE_RARP          0x8035
 #define ETH_TYPE_MPLS          0x8847
 #define ETH_TYPE_MPLS_MCAST    0x8848
+#define ETH_TYPE_NIX           0x8849
 
 static inline bool eth_type_mpls(ovs_be16 eth_type)
 {
     return eth_type == htons(ETH_TYPE_MPLS) ||
         eth_type == htons(ETH_TYPE_MPLS_MCAST);
+}
+
+static inline bool eth_type_nix(ovs_be16 eth_type)
+{
+    return eth_type == htons(ETH_TYPE_NIX);
 }
 
 static inline bool eth_type_vlan(ovs_be16 eth_type)
@@ -516,6 +522,69 @@ static inline uint8_t
 mpls_lse_to_bos(ovs_be32 mpls_lse)
 {
     return (mpls_lse & htonl(MPLS_BOS_MASK)) != 0;
+}
+
+/* NIx related definitions */
+static const ovs_u128 NIX_VEC_MASK = { { OVS_BE32_MAX, OVS_BE32_MAX, 0x00000000, 0x0 } };
+#define NIX_VEC_SHIFT 64
+
+static const ovs_u128 NIX_CURRENT_MASK = { { 0x0, 0x0, 0x00ff0000, 0x0 } };
+#define NIX_CURRENT_SHIFT 48
+
+static const ovs_u128 NIX_PREVETH_MASK = { { 0x0, 0x0, 0x0000ffff, 0x0 } };
+#define NIX_PREVETH_SHIFT 32
+
+static const ovs_u128 NIX_TOTAL_MASK = { { 0x0, 0x0, 0x0, 0xffffffff } };
+#define NIX_TOTAL_SHIFT 0
+
+#define NIX_HLEN 16
+
+struct nix_hdr {
+    ovs_be128 nix_lse;
+};
+BUILD_ASSERT_DECL(NIX_HLEN == sizeof(struct nix_hdr));
+
+/* Given a NIx label stack entry in network byte order
+ * return NIx label in host byte order */
+static inline uint64_t
+nix_lse_to_vec(ovs_be128 nix_lse)
+{
+    return ntoh128(nix_lse).u64.hi;
+}
+
+/* Given a NIx label stack entry in network byte order
+ * return NIx current length */
+static inline uint8_t
+nix_lse_to_cur(ovs_be128 nix_lse)
+{
+    return (ntoh128(nix_lse).u64.lo & NIX_CURRENT_MASK.u64.lo) >> NIX_CURRENT_SHIFT;
+}
+
+/* Given a NIx label stack entry in network byte order
+ * return NIx previous EtherType */
+static inline uint16_t
+nix_lse_to_preveth(ovs_be128 nix_lse)
+{
+    return (ntoh128(nix_lse).u64.lo & NIX_PREVETH_MASK.u64.lo) >> NIX_PREVETH_SHIFT;
+}
+
+/* Set current length in NIx LSE. */
+static inline void
+flow_set_nix_lse_cur(ovs_be128 *nix_lse, uint8_t cur)
+{
+	ovs_be64 *templo = &(nix_lse->be64.lo);
+	ovs_u128 cur128 = OVS_U128_ZERO;
+	cur128.u32[3] = cur;
+    *templo &= ~hton128(NIX_CURRENT_MASK).be64.lo;
+    *templo |= htonll(cur128.u64.lo << NIX_CURRENT_SHIFT);
+}
+
+/* Given a NIx label stack entry in network byte order
+ * return NIx previous EtherType */
+static inline uint32_t
+nix_lse_to_total(ovs_be128 nix_lse)
+{
+    return ntoh128(nix_lse).u32[3];
 }
 
 #define IP_FMT "%"PRIu32".%"PRIu32".%"PRIu32".%"PRIu32
