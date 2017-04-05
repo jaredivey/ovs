@@ -115,6 +115,12 @@ void flow_set_mpls_tc(struct flow *, int idx, uint8_t tc);
 void flow_set_mpls_bos(struct flow *, int idx, uint8_t stack);
 void flow_set_mpls_lse(struct flow *, int idx, ovs_be32 lse);
 
+void flow_set_nix_vec(struct flow *, int idx, ovs_be32 vec);
+void flow_set_nix_cur(struct flow *, int idx, uint8_t cur);
+void flow_set_nix_tot(struct flow *, int idx, uint8_t tot);
+void flow_set_nix_preveth(struct flow *, int idx, uint16_t preveth);
+void flow_set_nix_lse(struct flow *, int idx, ovs_be64 lse);
+
 void flow_compose(struct dp_packet *, const struct flow *);
 
 bool parse_ipv6_ext_hdrs(const void **datap, size_t *sizep, uint8_t *nw_proto,

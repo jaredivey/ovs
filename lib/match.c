@@ -727,6 +727,90 @@ match_set_any_mpls_lse(struct match *match, int idx)
     flow_set_mpls_lse(&match->flow, idx, htonl(0));
 }
 
+/* Modifies 'match' so that the NIx header 'idx' matches 'lse' exactly. */
+void
+match_set_nix_lse(struct match *match, int idx, ovs_be64 lse)
+{
+    match->wc.masks.nix_lse[idx] = OVS_BE64_MAX;
+    match->flow.nix_lse[idx] = lse;
+}
+
+/* Modifies 'match' so that the NIx vector is wildcarded. */
+void
+match_set_any_nix_vec(struct match *match, int idx)
+{
+    match->wc.masks.nix_lse[idx] &= ~htonll(NIX_VEC_MASK);
+    flow_set_nix_vec(&match->flow, idx, htonl(0));
+}
+
+/* Modifies 'match' so that it matches only packets with a NIx header whose
+ * vector equals the bits of 'nix_vec'. */
+void
+match_set_nix_vec(struct match *match, int idx, ovs_be32 nix_vec)
+{
+    match->wc.masks.nix_lse[idx] |= htonll(NIX_VEC_MASK);
+    flow_set_nix_vec(&match->flow, idx, nix_vec);
+}
+
+/* Modifies 'match' so that the NIx current length is wildcarded. */
+void
+match_set_any_nix_cur(struct match *match, int idx)
+{
+    match->wc.masks.nix_lse[idx] &= ~htonll(NIX_CURRENT_MASK);
+    flow_set_nix_cur(&match->flow, idx, 0);
+}
+
+/* Modifies 'match' so that it matches only packets with a NIx header whose
+ * current length equals the bits of 'nix_cur'. */
+void
+match_set_nix_cur(struct match *match, int idx, uint8_t cur)
+{
+    match->wc.masks.nix_lse[idx] |= htonll(NIX_CURRENT_MASK);
+    flow_set_nix_cur(&match->flow, idx, cur);
+}
+
+/* Modifies 'match' so that the NIx total length is wildcarded. */
+void
+match_set_any_nix_tot(struct match *match, int idx)
+{
+    match->wc.masks.nix_lse[idx] &= ~htonll(NIX_TOTAL_MASK);
+    flow_set_nix_tot(&match->flow, idx, 0);
+}
+
+/* Modifies 'match' so that it matches only packets with a NIx header whose
+ * total length equals the bits of 'nix_tot' */
+void
+match_set_nix_tot(struct match *match, int idx, uint8_t tot)
+{
+    match->wc.masks.nix_lse[idx] |= htonll(NIX_TOTAL_MASK);
+    flow_set_nix_tot(&match->flow, idx, tot);
+}
+
+/* Modifies 'match' so that the previous EtherType of NIx header 'idx' is wildcarded. */
+void
+match_set_any_nix_preveth(struct match *match, int idx)
+{
+    match->wc.masks.nix_lse[idx] &= ~htonll(NIX_PREVETH_MASK);
+    flow_set_nix_preveth(&match->flow, idx, 0);
+}
+
+/* Modifies 'match' so that it matches only packets in which the previous EtherType of NIx
+ * header 'idx' equals 'nix_preveth'. */
+void
+match_set_nix_preveth(struct match *match, int idx, uint16_t preveth)
+{
+    match->wc.masks.nix_lse[idx] |= htonll(NIX_PREVETH_MASK);
+    flow_set_nix_preveth(&match->flow, idx, preveth);
+}
+
+/* Modifies 'match' so that the NIx LSE is wildcarded. */
+void
+match_set_any_nix_lse(struct match *match, int idx)
+{
+    match->wc.masks.nix_lse[idx] = htonll(0);
+    flow_set_nix_lse(&match->flow, idx, htonll(0));
+}
+
 void
 match_set_tp_src(struct match *match, ovs_be16 tp_src)
 {

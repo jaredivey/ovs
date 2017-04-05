@@ -318,6 +318,7 @@ pinctrl_handle_put_dhcp_opts(
         &pkt_out, dp_packet_pull(pkt_in, pkt_in->l4_ofs), pkt_in->l4_ofs);
 
     pkt_out.l2_5_ofs = pkt_in->l2_5_ofs;
+    pkt_out.l2_6_ofs = pkt_in->l2_6_ofs;
     pkt_out.l2_pad_size = pkt_in->l2_pad_size;
     pkt_out.l3_ofs = pkt_in->l3_ofs;
     pkt_out.l4_ofs = pkt_in->l4_ofs;
@@ -611,6 +612,7 @@ pinctrl_handle_put_dhcpv6_opts(
                   pkt_in->l4_ofs);
 
     pkt_out.l2_5_ofs = pkt_in->l2_5_ofs;
+    pkt_out.l2_6_ofs = pkt_in->l2_6_ofs;
     pkt_out.l2_pad_size = pkt_in->l2_pad_size;
     pkt_out.l3_ofs = pkt_in->l3_ofs;
     pkt_out.l4_ofs = pkt_in->l4_ofs;

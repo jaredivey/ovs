@@ -62,6 +62,7 @@ struct dp_packet {
     uint8_t l2_pad_size;           /* Detected l2 padding size.
                                     * Padding is non-pullable. */
     uint16_t l2_5_ofs;             /* MPLS label stack offset, or UINT16_MAX */
+    uint16_t l2_6_ofs;             /* NIx vector stack offset, or UINT16_MAX */
     uint16_t l3_ofs;               /* Network-level header offset,
                                     * or UINT16_MAX. */
     uint16_t l4_ofs;               /* Transport-level header offset,
@@ -277,6 +278,7 @@ dp_packet_reset_offsets(struct dp_packet *b)
 {
     b->l2_pad_size = 0;
     b->l2_5_ofs = UINT16_MAX;
+    b->l2_6_ofs = UINT16_MAX;
     b->l3_ofs = UINT16_MAX;
     b->l4_ofs = UINT16_MAX;
 }
@@ -307,6 +309,22 @@ dp_packet_set_l2_5(struct dp_packet *b, void *l2_5)
 {
     b->l2_5_ofs = l2_5
                   ? (char *) l2_5 - (char *) dp_packet_data(b)
+                  : UINT16_MAX;
+}
+
+static inline void *
+dp_packet_l2_6(const struct dp_packet *b)
+{
+    return b->l2_6_ofs != UINT16_MAX
+           ? (char *) dp_packet_data(b) + b->l2_6_ofs
+           : NULL;
+}
+
+static inline void
+dp_packet_set_l2_6(struct dp_packet *b, void *l2_6)
+{
+    b->l2_6_ofs = l2_6
+                  ? (char *) l2_6 - (char *) dp_packet_data(b)
                   : UINT16_MAX;
 }
 

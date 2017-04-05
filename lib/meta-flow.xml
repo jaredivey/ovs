@@ -315,6 +315,7 @@ tcp,tp_src=0x07c0/0xfff0
     <dt><code>rarp</code></dt>   <dd><code>eth_type=0x8035</code></dd>
     <dt><code>mpls</code></dt>   <dd><code>eth_type=0x8847</code></dd>
     <dt><code>mplsm</code></dt>  <dd><code>eth_type=0x8848</code></dd>
+    <dt><code>nix</code></dt>   <dd><code>eth_type=0x8850</code></dd>
   </dl>
 
   <h2>Evolution of OpenFlow Fields</h2>
@@ -954,6 +955,9 @@ tcp,tp_src=0x07c0/0xfff0
 
         <dt>MPLS</dt>
         <dd><code>eth_type=0x8847</code> or <code>eth_type=0x8848</code></dd>
+
+        <dt>NIX</dt>
+        <dd><code>eth_type=0x8850</code></dd>
 
         <dt>TCP</dt>
         <dd>IPv4/IPv6 and <code>ip_proto=6</code></dd>
@@ -3413,15 +3417,15 @@ r r c c c.
 
     <diagram>
       <header name="Ethernet">
-	<bits name="dst" above="48" width="0.75"/>
-	<bits name="src" above="48" width="0.75"/>
-	<bits name="type" above="16" below="0x8847" width="0.4"/>
+       <bits name="dst" above="48" width="0.75"/>
+       <bits name="src" above="48" width="0.75"/>
+       <bits name="type" above="16" below="0x8847" width="0.4"/>
       </header>
       <header name="MPLS">
-	<bits name="label" above="20" width=".6"/>
-	<bits name="TC" above="3" width=".3"/>
-	<bits name="S" above="1" width=".1"/>
-	<bits name="TTL" above="8" width=".4"/>
+       <bits name="label" above="20" width=".6"/>
+       <bits name="TC" above="3" width=".3"/>
+       <bits name="S" above="1" width=".1"/>
+       <bits name="TTL" above="8" width=".4"/>
       </header>
       <dots/>
     </diagram>
@@ -3433,21 +3437,21 @@ r r c c c.
 
     <diagram>
       <header name="Ethernet">
-	<bits name="dst" above="48" width=".75"/>
-	<bits name="src" above="48" width=".75"/>
+       <bits name="dst" above="48" width=".75"/>
+       <bits name="src" above="48" width=".75"/>
       </header>
       <header name="802.1Q">
-	<bits name="TPID" above="16" below="0x8100" width=".4"/>
-	<bits name="TCI" above="16" width=".4"/>
+       <bits name="TPID" above="16" below="0x8100" width=".4"/>
+       <bits name="TCI" above="16" width=".4"/>
       </header>
       <header name="Ethertype">
-	<bits name="type" above="16" below="0x8847" width=".4"/>
+       <bits name="type" above="16" below="0x8847" width=".4"/>
       </header>
       <header name="MPLS">
-	<bits name="label" above="20" width=".6"/>
-	<bits name="TC" above="3" width=".3"/>
-	<bits name="S" above="1" width=".1"/>
-	<bits name="TTL" above="8" width=".4"/>
+       <bits name="label" above="20" width=".6"/>
+       <bits name="TC" above="3" width=".3"/>
+       <bits name="S" above="1" width=".1"/>
+       <bits name="TTL" above="8" width=".4"/>
       </header>
       <dots/>
     </diagram>
@@ -3459,38 +3463,38 @@ r r c c c.
     <dl>
       <dt>Label, 20 bits.</dt>
       <dd>
-	An identifier.
+    An identifier.
       </dd>
 
       <dt>Traffic control (TC), 3 bits.</dt>
       <dd>
-	Used for quality of service.
+    Used for quality of service.
       </dd>
 
       <dt>Bottom of stack (BOS), 1 bit (labeled just ``S'' above).</dt>
       <dd>
-	<p>
-	  0 indicates that another MPLS label follows this one.
-	</p>
+    <p>
+      0 indicates that another MPLS label follows this one.
+    </p>
 
-	<p>
-	  1 indicates that this MPLS label is the last one in the
-	  stack, so that some other protocol follows this one.
-	</p>
+    <p>
+      1 indicates that this MPLS label is the last one in the
+      stack, so that some other protocol follows this one.
+    </p>
       </dd>
 
       <dt>Time to live (TTL), 8 bits.</dt>
       <dd>
-	<p>
-	  Each hop across an MPLS network decrements the TTL by 1.  If
-	  it reaches 0, the packet is discarded.
-	</p>
+    <p>
+      Each hop across an MPLS network decrements the TTL by 1.  If
+      it reaches 0, the packet is discarded.
+    </p>
 
-	<p>
-	  OpenFlow does not make the MPLS TTL available as a match field, but
-	  actions are available to set and decrement the TTL.  Open vSwitch 2.6
-	  and later makes the MPLS TTL available as an extension.
-	</p>
+    <p>
+      OpenFlow does not make the MPLS TTL available as a match field, but
+      actions are available to set and decrement the TTL.  Open vSwitch 2.6
+      and later makes the MPLS TTL available as an extension.
+    </p>
       </dd>
     </dl>
 
@@ -3524,28 +3528,28 @@ r r c c c.
 
     <ul>
       <li>
-	A few reserved label values do indicate an inner protocol.
-	Label 0, the ``IPv4 Explicit NULL Label,'' indicates inner
-	IPv4.  Label 2, the ``IPv6 Explicit NULL Label,'' indicates
-	inner IPv6.
+    A few reserved label values do indicate an inner protocol.
+    Label 0, the ``IPv4 Explicit NULL Label,'' indicates inner
+    IPv4.  Label 2, the ``IPv6 Explicit NULL Label,'' indicates
+    inner IPv6.
       </li>
 
       <li>
-	Some deployments use a single inner protocol consistently.
+    Some deployments use a single inner protocol consistently.
       </li>
 
       <li>
-	In some deployments, the inner protocol must be inferred from
-	the innermost label.
+    In some deployments, the inner protocol must be inferred from
+    the innermost label.
       </li>
 
       <li>
-	In some deployments, the inner protocol must be inferred from
-	the innermost label and the encapsulated data, e.g. to
-	distinguish between inner IPv4 and IPv6 based on whether the
-	first nibble of the inner protocol data are <code>4</code> or
-	<code>6</code>.  OpenFlow and Open vSwitch do not currently
-	support these cases.
+    In some deployments, the inner protocol must be inferred from
+    the innermost label and the encapsulated data, e.g. to
+    distinguish between inner IPv4 and IPv6 based on whether the
+    first nibble of the inner protocol data are <code>4</code> or
+    <code>6</code>.  OpenFlow and Open vSwitch do not currently
+    support these cases.
       </li>
     </ul>
 
@@ -3560,82 +3564,82 @@ r r c c c.
 
     <field id="MFF_MPLS_LABEL" title="MPLS Label">
       <p>
-	The least significant 20 bits hold the ``label'' field from
-	the MPLS label.  Other bits are zero:
+    The least significant 20 bits hold the ``label'' field from
+    the MPLS label.  Other bits are zero:
       </p>
 
       <diagram>
-	<header name="OXM_OF_MPLS_LABEL">
-	  <bits name="zero" above="12" below="0" width=".6"/>
-	  <bits name="label" above="20" width="1.0"/>
-	</header>
+    <header name="OXM_OF_MPLS_LABEL">
+      <bits name="zero" above="12" below="0" width=".6"/>
+      <bits name="label" above="20" width="1.0"/>
+    </header>
       </diagram>
 
       <p>
-	Most label values are available for any use by deployments.
-	Values under 16 are reserved.
+    Most label values are available for any use by deployments.
+    Values under 16 are reserved.
       </p>
     </field>
 
     <field id="MFF_MPLS_TC" title="MPLS Traffic Class">
       <p>
-	The least significant 3 bits hold the TC field from the MPLS
-	label.  Other bits are zero:
+    The least significant 3 bits hold the TC field from the MPLS
+    label.  Other bits are zero:
       </p>
 
       <diagram>
-	<header name="OXM_OF_MPLS_TC">
-	  <bits name="zero" above="5" below="0" width="1.0"/>
-	  <bits name="TC" above="3" width=".6"/>
-	</header>
+    <header name="OXM_OF_MPLS_TC">
+      <bits name="zero" above="5" below="0" width="1.0"/>
+      <bits name="TC" above="3" width=".6"/>
+    </header>
       </diagram>
 
       <p>
-	This field is intended for use for Quality of Service (QoS)
-	and Explicit Congestion Notification purposes, but its
-	particular interpretation is deployment specific.
+    This field is intended for use for Quality of Service (QoS)
+    and Explicit Congestion Notification purposes, but its
+    particular interpretation is deployment specific.
       </p>
 
       <p>
-	Before 2009, this field was named EXP and reserved for
-	experimental use [RFC 5462].
+    Before 2009, this field was named EXP and reserved for
+    experimental use [RFC 5462].
       </p>
     </field>
 
     <field id="MFF_MPLS_BOS" title="MPLS Bottom of Stack">
       <p>
-	The least significant bit holds the BOS field from the MPLS
-	label.  Other bits are zero:
+    The least significant bit holds the BOS field from the MPLS
+    label.  Other bits are zero:
       </p>
 
       <diagram>
-	<header name="OXM_OF_MPLS_BOS">
-	  <bits name="zero" above="7" below="0" width="1.3"/>
-	  <bits name="BOS" above="1" width=".3"/>
-	</header>
+    <header name="OXM_OF_MPLS_BOS">
+      <bits name="zero" above="7" below="0" width="1.3"/>
+      <bits name="BOS" above="1" width=".3"/>
+    </header>
       </diagram>
 
       <p>
-	This field is useful as part of processing a series of incoming MPLS
-	labels.  A flow that includes a <code>pop_mpls</code> action should
-	generally match on <ref field="mpls_bos"/>:
+    This field is useful as part of processing a series of incoming MPLS
+    labels.  A flow that includes a <code>pop_mpls</code> action should
+    generally match on <ref field="mpls_bos"/>:
       </p>
 
       <ul>
-	<li>
-	  When <ref field="mpls_bos"/> is 1, there is another MPLS label
-	  following this one, so the Ethertype passed to <code>pop_mpls</code>
-	  should be an MPLS Ethertype.  For example: <code>table=0,
-	  dl_type=0x8847, mpls_bos=1, actions=pop_mpls:0x8847,
-	  goto_table:1</code>
-	</li>
+    <li>
+      When <ref field="mpls_bos"/> is 1, there is another MPLS label
+      following this one, so the Ethertype passed to <code>pop_mpls</code>
+      should be an MPLS Ethertype.  For example: <code>table=0,
+      dl_type=0x8847, mpls_bos=1, actions=pop_mpls:0x8847,
+      goto_table:1</code>
+    </li>
 
-	<li>
-	  When <ref field="mpls_bos"/> is 0, this MPLS label is the last one,
-	  so the Ethertype passed to <code>pop_mpls</code> should be a non-MPLS
-	  Ethertype such as IPv4.  For example: <code>table=1, dl_type=0x8847,
-	  mpls_bos=0, actions=pop_mpls:0x0800, goto_table:2</code>
-	</li>
+    <li>
+      When <ref field="mpls_bos"/> is 0, this MPLS label is the last one,
+      so the Ethertype passed to <code>pop_mpls</code> should be a non-MPLS
+      Ethertype such as IPv4.  For example: <code>table=1, dl_type=0x8847,
+      mpls_bos=0, actions=pop_mpls:0x0800, goto_table:2</code>
+    </li>
       </ul>
     </field>
 
@@ -3645,9 +3649,143 @@ r r c c c.
       </p>
 
       <diagram>
-	<header name="NXM_NX_MPLS_TTL">
-	  <bits name="TTL" above="8" width=".4"/>
-	</header>
+    <header name="NXM_NX_MPLS_TTL">
+      <bits name="TTL" above="8" width=".4"/>
+    </header>
+      </diagram>
+    </field>
+  </group>
+
+  <group title="Layer 2.6: NIX">
+    <p>
+      One or more NIx headers (more commonly called <dfn>NIx
+      vectors</dfn>) follow an Ethernet type field that specifies a
+      NIx Ethernet type [Riley, Ammar, Zegura].  Ethertype <code>0x8850</code> is
+      used for all unicast.
+    </p>
+
+    <p>
+      The most common overall packet format is Ethernet II, shown
+      below (SNAP encapsulation may be used but is not ordinarily seen
+      in Ethernet networks):
+    </p>
+
+    <diagram>
+      <header name="Ethernet">
+       <bits name="dst" above="48" width="0.75"/>
+       <bits name="src" above="48" width="0.75"/>
+       <bits name="type" above="16" below="0x8850" width="0.4"/>
+      </header>
+      <header name="NIx">
+       <bits name="vec" above="32" width=".5"/>
+       <bits name="cur" above="8" width=".12"/>
+       <bits name="tot" above="8" width=".12"/>
+       <bits name="preveth" above="16" width=".26"/>
+      </header>
+      <dots/>
+    </diagram>
+
+    <p>
+      The fields within a NIx header are:
+    </p>
+
+    <dl>
+      <dt>Vector, 32 bits.</dt>
+      <dd>
+    A binary array containing next hop information.
+      </dd>
+
+      <dt>Current length (cur), 8 bits.</dt>
+      <dd>
+    Current point at which NIx vector reading should start.
+      </dd>
+
+      <dt>Total length (tot), 8 bits.</dt>
+      <dd>
+    <p>
+    Total length of NIx vector for this header.
+    </p>
+      </dd>
+
+      <dt>Previous EtherType, 16 bits.</dt>
+      <dd>
+    <p>
+    The EtherType of the encapsulated packet. It is stored for use when
+    exiting an SDN.
+    </p>
+      </dd>
+    </dl>
+
+    <h2>NIx Header Stacks</h2>
+
+    <p>
+      Unlike the other encapsulations supported by OpenFlow and Open vSwitch,
+      NIx headers are routinely used in ``stacks'' two or three deep and
+      sometimes even deeper.  Open vSwitch currently supports up to four
+      headers.
+    </p>
+
+    <h2>NIx Inner Protocol</h2>
+
+    <p>
+      A NIx header indicates what inner protocol it encapsulates through its
+      Previous EtherType field. OpenvSwitch can iterate through NIx EtherTypes
+      until the original packet type is found.
+    </p>
+
+    <h2>Field Details</h2>
+
+    <field id="MFF_NIX_VEC" title="NIx Vector">
+      <p>
+    The least significant 32 bits hold the ``vec'' field from
+    the NIx header.
+      </p>
+
+      <diagram>
+    <header name="OXM_OF_NIX_VEC">
+      <bits name="vec" above="32" width="1.0"/>
+    </header>
+      </diagram>
+    </field>
+
+    <field id="MFF_NIX_CUR" title="Current NIx Length">
+      <p>
+    The least significant 5 bits hold the current length field from the NIx
+    header.  Other bits are zero:
+      </p>
+
+      <diagram>
+    <header name="OXM_OF_NIX_CUR">
+      <bits name="zero" above="3" below="0" width="0.6"/>
+      <bits name="cur" above="5" width="1.0"/>
+    </header>
+      </diagram>
+    </field>
+
+    <field id="MFF_NIX_TOT" title="Total NIx Length">
+      <p>
+    The least significant 5 bits holds the total length field from the NIx
+    header.  Other bits are zero:
+      </p>
+
+      <diagram>
+    <header name="OXM_OF_NIX_TOT">
+      <bits name="zero" above="3" below="0" width="0.6"/>
+      <bits name="tot" above="5" width="1.0"/>
+    </header>
+      </diagram>
+    </field>
+
+    <field id="MFF_NIX_PREVETH" title="Previous EtherType">
+      <p>
+    All 16 bits hold the previous EtherType field from the NIx
+    header.
+      </p>
+
+      <diagram>
+    <header name="OXM_OF_NIX_PREVETH">
+      <bits name="preveth" above="16" width="1.0"/>
+    </header>
       </diagram>
     </field>
   </group>

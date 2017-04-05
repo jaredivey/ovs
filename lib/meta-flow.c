@@ -306,6 +306,15 @@ mf_is_all_wild(const struct mf_field *mf, const struct flow_wildcards *wc)
     case MFF_MPLS_TTL:
         return !(wc->masks.mpls_lse[0] & htonl(MPLS_TTL_MASK));
 
+    case MFF_NIX_VEC:
+        return !(wc->masks.nix_lse[0] & htonll(NIX_VEC_MASK));
+    case MFF_NIX_CUR:
+        return !(wc->masks.nix_lse[0] & htonll(NIX_CURRENT_MASK));
+    case MFF_NIX_TOT:
+        return !(wc->masks.nix_lse[0] & htonll(NIX_TOTAL_MASK));
+    case MFF_NIX_PREVETH:
+        return !(wc->masks.nix_lse[0] & htonll(NIX_PREVETH_MASK));
+
     case MFF_IPV4_SRC:
         return !wc->masks.nw_src;
     case MFF_IPV4_DST:
@@ -573,6 +582,18 @@ mf_is_value_valid(const struct mf_field *mf, const union mf_value *value)
     case MFF_MPLS_BOS:
         return !(value->u8 & ~(MPLS_BOS_MASK >> MPLS_BOS_SHIFT));
 
+    case MFF_NIX_VEC:
+        return !(value->be32 & ~htonl(NIX_VEC_MASK >> NIX_VEC_SHIFT));
+
+    case MFF_NIX_CUR:
+        return !(value->u8 & ~(NIX_CURRENT_MASK >> NIX_CURRENT_SHIFT));
+
+    case MFF_NIX_TOT:
+        return !(value->u8 & ~(NIX_TOTAL_MASK >> NIX_TOTAL_SHIFT));
+
+    case MFF_NIX_PREVETH:
+        return !(value->be16 & ~(NIX_PREVETH_MASK >> NIX_PREVETH_SHIFT));
+
     case MFF_TUN_FLAGS:
         return !(value->be16 & ~htons(FLOW_TNL_PUB_F_MASK));
 
@@ -755,6 +776,22 @@ mf_get_value(const struct mf_field *mf, const struct flow *flow,
 
     case MFF_MPLS_TTL:
         value->u8 = mpls_lse_to_ttl(flow->mpls_lse[0]);
+        break;
+
+    case MFF_NIX_VEC:
+        value->be32 = htonl(nix_lse_to_vec(flow->nix_lse[0]));
+        break;
+
+    case MFF_NIX_CUR:
+        value->u8 = nix_lse_to_cur(flow->nix_lse[0]);
+        break;
+
+    case MFF_NIX_TOT:
+        value->u8 = nix_lse_to_total(flow->nix_lse[0]);
+        break;
+
+    case MFF_NIX_PREVETH:
+        value->be16 = htons(nix_lse_to_preveth(flow->nix_lse[0]));
         break;
 
     case MFF_IPV4_SRC:
@@ -1045,6 +1082,22 @@ mf_set_value(const struct mf_field *mf,
 
     case MFF_MPLS_TTL:
         match_set_mpls_ttl(match, 0, value->u8);
+        break;
+
+    case MFF_NIX_VEC:
+        match_set_nix_vec(match, 0, value->be32);
+        break;
+
+    case MFF_NIX_CUR:
+        match_set_nix_cur(match, 0, value->u8);
+        break;
+
+    case MFF_NIX_TOT:
+        match_set_nix_tot(match, 0, value->u8);
+        break;
+
+    case MFF_NIX_PREVETH:
+        match_set_nix_preveth(match, 0, value->be16);
         break;
 
     case MFF_IPV4_SRC:
@@ -1408,6 +1461,22 @@ mf_set_flow_value(const struct mf_field *mf,
         break;
 
     case MFF_MPLS_TTL:
+        flow_set_mpls_ttl(flow, 0, value->u8);
+        break;
+
+    case MFF_NIX_VEC:
+        flow_set_nix_vec(flow, 0, value->be32);
+        break;
+
+    case MFF_NIX_CUR:
+        flow_set_mpls_tc(flow, 0, value->u8);
+        break;
+
+    case MFF_NIX_TOT:
+        flow_set_mpls_bos(flow, 0, value->u8);
+        break;
+
+    case MFF_NIX_PREVETH:
         flow_set_mpls_ttl(flow, 0, value->u8);
         break;
 
@@ -1778,6 +1847,22 @@ mf_set_wild(const struct mf_field *mf, struct match *match, char **err_str)
         match_set_any_mpls_ttl(match, 0);
         break;
 
+    case MFF_NIX_VEC:
+        match_set_any_nix_vec(match, 0);
+        break;
+
+    case MFF_NIX_CUR:
+        match_set_any_nix_cur(match, 0);
+        break;
+
+    case MFF_NIX_TOT:
+        match_set_any_nix_tot(match, 0);
+        break;
+
+    case MFF_NIX_PREVETH:
+        match_set_any_nix_preveth(match, 0);
+        break;
+
     case MFF_IPV4_SRC:
     case MFF_ARP_SPA:
         match_set_nw_src_masked(match, htonl(0), htonl(0));
@@ -1942,6 +2027,10 @@ mf_set(const struct mf_field *mf,
     case MFF_MPLS_TC:
     case MFF_MPLS_BOS:
     case MFF_MPLS_TTL:
+    case MFF_NIX_VEC:
+    case MFF_NIX_CUR:
+    case MFF_NIX_TOT:
+    case MFF_NIX_PREVETH:
     case MFF_IP_PROTO:
     case MFF_IP_TTL:
     case MFF_IP_DSCP:

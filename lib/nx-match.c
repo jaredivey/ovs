@@ -1066,6 +1066,29 @@ nx_put_raw(struct ofpbuf *b, enum ofp_version oxm, const struct match *match,
         }
     }
 
+    /* NIX. */
+    if (eth_type_nix(flow->dl_type)) {
+        if (match->wc.masks.nix_lse[0] & htonll(NIX_CURRENT_MASK)) {
+            nxm_put_8(b, MFF_NIX_CUR, oxm,
+                      nix_lse_to_cur(flow->nix_lse[0]));
+        }
+
+        if (match->wc.masks.nix_lse[0] & htonll(NIX_TOTAL_MASK)) {
+            nxm_put_8(b, MFF_NIX_TOT, oxm,
+                    nix_lse_to_total(flow->nix_lse[0]));
+        }
+
+        if (match->wc.masks.nix_lse[0] & htonll(NIX_PREVETH_MASK)) {
+            nxm_put_16(b, MFF_NIX_PREVETH, oxm,
+                    htons(nix_lse_to_preveth(flow->nix_lse[0])));
+        }
+
+        if (match->wc.masks.nix_lse[0] & htonll(NIX_VEC_MASK)) {
+            nxm_put_32(b, MFF_NIX_VEC, oxm,
+                       htonl(nix_lse_to_vec(flow->nix_lse[0])));
+        }
+    }
+
     /* L3. */
     if (is_ip_any(flow)) {
         nxm_put_ip(b, match, oxm);

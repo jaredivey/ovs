@@ -61,6 +61,9 @@ const char *flow_tun_flag_to_string(uint32_t flags);
 /* Maximum number of supported MPLS labels. */
 #define FLOW_MAX_MPLS_LABELS 14
 
+/* Maximum number of supported NIx vectors. */
+#define FLOW_MAX_NIX_LABELS 4
+
 /* Maximum number of supported SAMPLE action nesting. */
 #define FLOW_MAX_SAMPLE_NESTING 10
 
@@ -121,6 +124,8 @@ struct flow {
     union flow_vlan_hdr vlans[FLOW_MAX_VLAN_HEADERS]; /* VLANs */
     ovs_be32 mpls_lse[ROUND_UP(FLOW_MAX_MPLS_LABELS, 2)]; /* MPLS label stack
                                                              (with padding). */
+    ovs_be64 nix_lse[FLOW_MAX_NIX_LABELS]; /* NIx label stack */
+
     /* L3 (64-bit aligned) */
     ovs_be32 nw_src;            /* IPv4 source address or ARP SPA. */
     ovs_be32 nw_dst;            /* IPv4 destination address or ARP TPA. */
@@ -157,7 +162,7 @@ BUILD_ASSERT_DECL(sizeof(struct flow_tnl) % sizeof(uint64_t) == 0);
 
 /* Remember to update FLOW_WC_SEQ when changing 'struct flow'. */
 BUILD_ASSERT_DECL(offsetof(struct flow, igmp_group_ip4) + sizeof(uint32_t)
-                  == sizeof(struct flow_tnl) + 300 + 40
+                  == sizeof(struct flow_tnl) + 300 + 40 + 32
                   && FLOW_WC_SEQ == 38);
 
 /* Incremental points at which flow classification may be performed in

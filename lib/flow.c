@@ -333,6 +333,23 @@ parse_mpls(const void **datap, size_t *sizep)
     return MIN(count, FLOW_MAX_MPLS_LABELS);
 }
 
+/* Pulls the NIx headers at '*datap' and returns the count of them. */
+static inline int
+parse_nix(const void **datap, size_t *sizep)
+{
+    const struct nix_hdr *nh;
+    int count = 0;
+
+    while ((nh = data_try_pull(datap, sizep, sizeof *nh))) {
+        count++;
+        if (ETH_TYPE_NIX !=
+                htons(nix_lse_to_preveth(get_32aligned_be64(&nh->nix_lse)))) {
+            break; // Break when previous EtherType is no longer NIx
+        }
+    }
+    return MIN(count, FLOW_MAX_NIX_LABELS);
+}
+
 /* passed vlan_hdrs arg must be at least size FLOW_MAX_VLAN_HEADERS. */
 static inline ALWAYS_INLINE size_t
 parse_vlan(const void **datap, size_t *sizep, union flow_vlan_hdr *vlan_hdrs)
@@ -538,6 +555,9 @@ parse_ipv6_ext_hdrs(const void **datap, size_t *sizep, uint8_t *nw_proto,
  *    - packet->l2_5_ofs to the start of the MPLS shim header, or UINT16_MAX
  *      when there is no MPLS shim header.
  *
+ *    - packet->l2_6_ofs to the start of the NIx shim header, or UINT16_MAX
+ *      when there is no NIx shim header.
+ *
  *    - packet->l3_ofs to just past the Ethernet header, or just past the
  *      vlan_header if one is present, to the first byte of the payload of the
  *      Ethernet frame.  UINT16_MAX if the frame is too short to contain an
@@ -658,6 +678,16 @@ miniflow_extract(struct dp_packet *packet, struct miniflow *dst)
         packet->l2_5_ofs = (char *)data - l2;
         count = parse_mpls(&data, &size);
         miniflow_push_words_32(mf, mpls_lse, mpls, count);
+    }
+
+    /* Parse nix. */
+    if (OVS_UNLIKELY(eth_type_nix(dl_type))) {
+        int count;
+        const void *nix = data;
+
+        packet->l2_6_ofs = (char *)data - l2;
+        count = parse_nix(&data, &size);
+        miniflow_push_words_32(mf, nix_lse, nix, 2*count);
     }
 
     /* Network layer. */
@@ -2412,6 +2442,44 @@ flow_set_mpls_lse(struct flow *flow, int idx, ovs_be32 lse)
     flow->mpls_lse[idx] = lse;
 }
 
+/* Sets the NIx vector that 'flow' matches to 'vec', which is interpreted
+ * as an OpenFlow 1.3 "nix_vec" value. */
+void
+flow_set_nix_vec(struct flow *flow, int idx, ovs_be32 vec)
+{
+    set_nix_lse_vec(&flow->nix_lse[idx], vec);
+}
+
+/* Sets the NIx current length that 'flow' matches to 'cur', which should be in the
+ * range 0...255. */
+void
+flow_set_nix_cur(struct flow *flow, int idx, uint8_t cur)
+{
+    set_nix_lse_cur(&flow->nix_lse[idx], cur);
+}
+
+/* Sets the NIx total length that 'flow' matches to 'tot', which should be in the
+ * range 0...255. */
+void
+flow_set_nix_tot(struct flow *flow, int idx, uint8_t tot)
+{
+    set_nix_lse_tot(&flow->nix_lse[idx], tot);
+}
+
+/* Sets the NIx previous EtherType that 'flow' matches. */
+void
+flow_set_nix_preveth(struct flow *flow, int idx, uint16_t preveth)
+{
+    set_nix_lse_preveth(&flow->nix_lse[idx], preveth);
+}
+
+/* Sets the entire NIx LSE. */
+void
+flow_set_nix_lse(struct flow *flow, int idx, ovs_be64 lse)
+{
+    flow->nix_lse[idx] = lse;
+}
+
 static size_t
 flow_compose_l4(struct dp_packet *p, const struct flow *flow)
 {
@@ -2648,6 +2716,20 @@ flow_compose(struct dp_packet *p, const struct flow *flow)
         }
         while (n > 0) {
             push_mpls(p, flow->dl_type, flow->mpls_lse[--n]);
+        }
+    }
+
+    if (eth_type_nix(flow->dl_type)) {
+        int n;
+
+        p->l2_6_ofs = p->l3_ofs;
+        for (n = 1; n < FLOW_MAX_NIX_LABELS; n++) {
+            if (ETH_TYPE_NIX != htons(nix_lse_to_preveth(flow->nix_lse[n - 1]))) {
+                break;
+            }
+        }
+        while (n > 0) {
+            push_nix(p, flow->dl_type, flow->nix_lse[--n]);
         }
     }
 }

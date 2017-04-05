@@ -359,6 +359,117 @@ pop_mpls(struct dp_packet *packet, ovs_be16 ethtype)
     }
 }
 
+static bool is_nix(struct dp_packet *packet)
+{
+    return packet->l2_6_ofs != UINT16_MAX;
+}
+
+/* Set current length of a NIx label stack entry (LSE). */
+void
+set_nix_lse_cur(ovs_be64 *lse, uint8_t cur)
+{
+    *lse &= ~htonll(NIX_CURRENT_MASK);
+    *lse |= htonll((cur << NIX_CURRENT_SHIFT) & NIX_CURRENT_MASK);
+}
+
+/* Set total length of a NIx label stack entry (LSE). */
+void
+set_nix_lse_tot(ovs_be64 *lse, uint8_t tot)
+{
+    *lse &= ~htonll(NIX_TOTAL_MASK);
+    *lse |= htonll((tot << NIX_TOTAL_SHIFT) & NIX_TOTAL_MASK);
+}
+
+/* Set vector of a NIx label stack entry (LSE). */
+void
+set_nix_lse_vec(ovs_be64 *lse, ovs_be32 vec)
+{
+    *lse &= ~htonll(NIX_VEC_MASK);
+    *lse |= htonll((ntohll(vec) << NIX_VEC_SHIFT) & NIX_VEC_MASK);
+}
+
+/* Set previous Ethertype of a NIx label stack entry (LSE). */
+void
+set_nix_lse_preveth(ovs_be64 *lse, uint16_t preveth)
+{
+    *lse &= ~htonll(NIX_PREVETH_MASK);
+    *lse |= htonll((preveth << NIX_PREVETH_SHIFT) & NIX_PREVETH_MASK);
+}
+
+/* Compose a NIx label stack entry (LSE) from its components. */
+ovs_be64
+set_nix_lse_values(uint8_t cur, uint8_t tot, uint16_t preveth, ovs_be32 vec)
+{
+    ovs_be64 lse = htonll(0);
+    set_nix_lse_cur(&lse, cur);
+    set_nix_lse_tot(&lse, tot);
+    set_nix_lse_preveth(&lse, preveth);
+    set_nix_lse_vec(&lse, vec);
+    return lse;
+}
+
+/* Set NIx label stack entry to outermost NIx header.*/
+void
+set_nix_lse(struct dp_packet *packet, ovs_be64 nix_lse)
+{
+    /* Packet type should be NIx to set label stack entry. */
+    if (is_nix(packet)) {
+        struct nix_hdr *nh = dp_packet_l2_5(packet);
+
+        /* Update nix label stack entry. */
+        put_32aligned_be64(&nh->nix_lse, nix_lse);
+    }
+}
+
+/* Push NIx label stack entry 'lse' onto 'packet' as the outermost NIx
+ * header.  If 'packet' does not already have any NIx labels, then its
+ * Ethertype is changed to 'ethtype' (which must be an MPLS Ethertype). */
+void
+push_nix(struct dp_packet *packet, ovs_be16 ethtype, ovs_be64 lse)
+{
+    char * header;
+    size_t len;
+
+    if (!eth_type_nix(ethtype)) {
+        return;
+    }
+
+    if (!is_nix(packet)) {
+        /* Set NIx label stack offset. */
+        packet->l2_6_ofs = packet->l3_ofs;
+    }
+
+    set_ethertype(packet, ethtype);
+
+    /* Push new NIx shim header onto packet. */
+    len = packet->l2_6_ofs;
+    header = dp_packet_resize_l2_5(packet, NIX_HLEN); // Works with 2.6 since it's a hack
+    memmove(header, header + NIX_HLEN, len);
+    memcpy(header + len, &lse, sizeof lse);
+}
+
+/* If 'packet' is a NIx packet, removes its outermost NIx label stack entry.
+ * If the label that was removed was the only NIx label, changes 'packet''s
+ * Ethertype to 'ethtype' (which ordinarily should not be a NIx
+ * Ethertype). */
+void
+pop_nix(struct dp_packet *packet, ovs_be16 ethtype)
+{
+    if (is_nix(packet)) {
+        struct nix_hdr *nh = dp_packet_l2_6(packet);
+        size_t len = packet->l2_6_ofs;
+        bool bottom = nix_lse_to_preveth(get_32aligned_be64(&nh->nix_lse)) != ntohs(ethtype);
+
+        set_ethertype(packet, ethtype);
+        if (bottom) {
+            dp_packet_set_l2_6(packet, NULL);
+        }
+        /* Shift the l2 header forward. */
+        memmove((char*)dp_packet_data(packet) + NIX_HLEN, dp_packet_data(packet), len);
+        dp_packet_resize_l2_5(packet, -NIX_HLEN); // Works with 2.6 since it's a hack
+    }
+}
+
 /* Converts hex digits in 'hex' to an Ethernet packet in '*packetp'.  The
  * caller must free '*packetp'.  On success, returns NULL.  On failure, returns
  * an error message and stores NULL in '*packetp'.

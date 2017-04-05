@@ -167,6 +167,7 @@ dp_packet_clone_with_headroom(const struct dp_packet *buffer, size_t headroom)
                                                  headroom);
     new_buffer->l2_pad_size = buffer->l2_pad_size;
     new_buffer->l2_5_ofs = buffer->l2_5_ofs;
+    new_buffer->l2_6_ofs = buffer->l2_6_ofs;
     new_buffer->l3_ofs = buffer->l3_ofs;
     new_buffer->l4_ofs = buffer->l4_ofs;
     new_buffer->md = buffer->md;

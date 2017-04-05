@@ -1191,6 +1191,69 @@ enum OVS_PACKED_ENUM mf_field_id {
     MFF_MPLS_TTL,
 
 /* ## ---- ## */
+/* ## NIX  ## */
+/* ## ---- ## */
+
+    /* "nix_vec".
+     *
+     * The outermost NIx vector, or 0 if no NIx vectors are present.
+     *
+     * Type: be64.
+     * Maskable: no.
+     * Formatting: decimal.
+     * Prerequisites: none.
+     * Access: read/write.
+     * NXM: none.
+     * OXM: OXM_OF_NIX_VEC(126) since OF1.3 and v1.11.
+     */
+    MFF_NIX_VEC,
+
+    /* "nix_cur".
+     *
+     * The outermost NIx vector's current length field, or 0 if no NIx
+     * vectors are present.
+     *
+     * Type: u8.
+     * Maskable: no.
+     * Formatting: decimal.
+     * Prerequisites: none.
+     * Access: read/write.
+     * NXM: none.
+     * OXM: OXM_OF_NIX_CUR(127) since OF1.3 and v1.11.
+     */
+    MFF_NIX_CUR,
+
+    /* "nix_tot".
+     *
+     * The outermost NIx vector's total length field, or 0 if no NIx
+     * vectors are present.
+     *
+     * Type: u8.
+     * Maskable: no.
+     * Formatting: decimal.
+     * Prerequisites: none.
+     * Access: read/write.
+     * NXM: none.
+     * OXM: OXM_OF_NIX_TOT(128) since OF1.3 and v1.11.
+     */
+    MFF_NIX_TOT,
+
+    /* "nix_preveth".
+     *
+     * The outermost NIx vector's previous Ethertype field, or 0 if no NIx
+     * vectors are present.
+     *
+     * Type: be16.
+     * Maskable: no.
+     * Formatting: decimal.
+     * Prerequisites: none.
+     * Access: read/write.
+     * NXM: none.
+     * OXM: OXM_OF_NIX_PREVETH(129) since OF1.3 and v1.11.
+     */
+    MFF_NIX_PREVETH,
+
+/* ## ---- ## */
 /* ## IPv4 ## */
 /* ## ---- ## */
 
