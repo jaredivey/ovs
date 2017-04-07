@@ -706,6 +706,8 @@ ofp10_match_to_string(const struct ofp10_match *om, int verbosity)
             ds_put_cstr(&f, "mpls,");
         } else if (om->dl_type == htons(ETH_TYPE_MPLS_MCAST)) {
             ds_put_cstr(&f, "mplsm,");
+        } else if (om->dl_type == htons(ETH_TYPE_NIX)) {
+            ds_put_cstr(&f, "nix,");
         } else {
             skip_type = false;
         }

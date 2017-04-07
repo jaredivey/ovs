@@ -219,12 +219,12 @@ enum ofp_raw_action_type {
      * ETH_TYPE_MPLS otherwise, not the label.] */
     OFPAT_RAW_POP_MPLS,
 
-    /* OF1.2+(34): ovs_be16.
+    /* NX1.0(46), OF1.2+(34): ovs_be16.
      *
      * [The argument is the Ethertype, e.g. ETH_TYPE_NIX, not the label.] */
     OFPAT_RAW_PUSH_NIX,
 
-    /* OF1.2+(35): void. */
+    /* NX1.0(47), OF1.2+(35): void. */
     OFPAT_RAW_POP_NIX,
 
     /* NX1.0(4), OF1.1+(21): uint32_t. */
@@ -3683,9 +3683,9 @@ decode_OFPAT_RAW_PUSH_NIX(ovs_be16 ethertype,
 
 static void
 encode_PUSH_NIX(const struct ofpact_push_nix *push_nix,
-        enum ofp_version ofp_version OVS_UNUSED, struct ofpbuf *out)
+        enum ofp_version ofp_version, struct ofpbuf *out)
 {
-    put_OFPAT_PUSH_NIX(out, push_nix->ethertype);
+    put_OFPAT_PUSH_NIX(out, ofp_version, push_nix->ethertype);
 }
 
 static char * OVS_WARN_UNUSED_RESULT
@@ -3717,9 +3717,9 @@ decode_OFPAT_RAW_POP_NIX(struct ofpbuf *out OVS_UNUSED)
 
 static void
 encode_POP_NIX(const struct ofpact_null *pop_nix OVS_UNUSED,
-        enum ofp_version ofp_version OVS_UNUSED, struct ofpbuf *out)
+        enum ofp_version ofp_version, struct ofpbuf *out)
 {
-    put_OFPAT_POP_NIX(out);
+    put_OFPAT_POP_NIX(out, ofp_version);
 }
 
 static char * OVS_WARN_UNUSED_RESULT
