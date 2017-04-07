@@ -942,8 +942,7 @@ format_odp_action(struct ds *ds, const struct nlattr *a)
         break;
     }
     case OVS_ACTION_ATTR_POP_NIX: {
-        ovs_be16 ethertype = nl_attr_get_be16(a);
-        ds_put_format(ds, "pop_nix(eth_type=0x%"PRIx16")", ntohs(ethertype));
+        ds_put_cstr(ds, "pop_nix");
         break;
     }
     case OVS_ACTION_ATTR_SAMPLE:
