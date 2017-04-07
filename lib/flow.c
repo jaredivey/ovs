@@ -2442,6 +2442,151 @@ flow_set_mpls_lse(struct flow *flow, int idx, ovs_be32 lse)
     flow->mpls_lse[idx] = lse;
 }
 
+
+
+/* Returns the number of NIx LSEs present in 'flow'
+ *
+ * Returns 0 if the 'dl_type' of 'flow' is not an NIx ethernet type.
+ * Otherwise traverses 'flow''s NIx label stack stopping at the
+ * first entry that a different preveth. If no such entry exists then
+ * the maximum number of LSEs that can be stored in 'flow' is returned.
+ */
+int
+flow_count_nix_vecs(const struct flow *flow, struct flow_wildcards *wc)
+{
+    /* dl_type is always masked. */
+    if (eth_type_nix(flow->dl_type)) {
+        int i;
+        int cnt;
+
+        cnt = 0;
+        for (i = 0; i < FLOW_MAX_NIX_LABELS; i++) {
+            if (wc) {
+                wc->masks.nix_lse[i] |= htonll(NIX_PREVETH_MASK);
+            }
+            if (ETH_TYPE_NIX != htons(nix_lse_to_preveth(flow->nix_lse[i]))) {
+                return i + 1;
+            }
+            if (flow->nix_lse[i]) {
+                cnt++;
+            }
+        }
+        return cnt;
+    } else {
+        return 0;
+    }
+}
+
+/* Returns the number consecutive of NIx LSEs, starting at the
+ * innermost LSE, that are common in 'a' and 'b'.
+ *
+ * 'an' must be flow_count_nix_vecs(a).
+ * 'bn' must be flow_count_nix_vecs(b).
+ */
+int
+flow_count_common_nix_vecs(const struct flow *a, int an,
+                              const struct flow *b, int bn,
+                              struct flow_wildcards *wc)
+{
+    int min_n = MIN(an, bn);
+    if (min_n == 0) {
+        return 0;
+    } else {
+        int common_n = 0;
+        int a_last = an - 1;
+        int b_last = bn - 1;
+        int i;
+
+        for (i = 0; i < min_n; i++) {
+            if (wc) {
+                wc->masks.nix_lse[a_last - i] = OVS_BE64_MAX;
+                wc->masks.nix_lse[b_last - i] = OVS_BE64_MAX;
+            }
+            if (a->nix_lse[a_last - i] != b->nix_lse[b_last - i]) {
+                break;
+            } else {
+                common_n++;
+            }
+        }
+
+        return common_n;
+    }
+}
+
+/* Adds a new outermost NIx label to 'flow' and changes 'flow''s Ethernet type
+ * to 'nix_eth_type', which must be an NIx Ethertype.
+ *
+ * 'n' must be flow_count_nix_labels(flow).  'n' must be less than
+ * FLOW_MAX_NIX_LABELS (because otherwise flow->nix_lse[] would overflow).
+ */
+void
+flow_push_nix(struct flow *flow, int n, ovs_be16 nix_eth_type,
+               struct flow_wildcards *wc, bool clear_flow_L3)
+{
+    ovs_assert(eth_type_nix(nix_eth_type));
+    ovs_assert(n < FLOW_MAX_NIX_LABELS);
+
+    if (n) {
+        int i;
+
+        if (wc) {
+            memset(&wc->masks.nix_lse, 0xff, sizeof *wc->masks.nix_lse * n);
+        }
+        for (i = n; i >= 1; i--) {
+            flow->nix_lse[i] = flow->nix_lse[i - 1];
+        }
+    } else {
+        int vec = 0;          /* IPv4 Explicit Null. */
+        int cur = 0;
+        int tot = 32;
+
+        flow->nix_lse[0] = set_nix_lse_values(cur, tot, flow->dl_type, htonl(vec));
+
+        if (clear_flow_L3) {
+            /* Clear all L3 and L4 fields and dp_hash. */
+            BUILD_ASSERT(FLOW_WC_SEQ == 38);
+            memset((char *) flow + FLOW_SEGMENT_2_ENDS_AT, 0,
+                   sizeof(struct flow) - FLOW_SEGMENT_2_ENDS_AT);
+            flow->dp_hash = 0;
+        }
+    }
+    flow->dl_type = nix_eth_type;
+}
+
+/* Tries to remove the outermost MPLS label from 'flow'.  Returns true if
+ * successful, false otherwise.  On success, sets 'flow''s Ethernet type to
+ * 'eth_type'.
+ *
+ * 'n' must be flow_count_nix_labels(flow). */
+bool
+flow_pop_nix(struct flow *flow, int n, struct flow_wildcards *wc)
+{
+    int i;
+
+    if (n == 0) {
+        /* Nothing to pop. */
+        return false;
+    }
+
+    ovs_be16 preveth = htons(nix_lse_to_preveth(flow->nix_lse[n - 1]));
+    if (n == FLOW_MAX_NIX_LABELS) {
+        if (wc) {
+            wc->masks.nix_lse[n - 1] |= htonll(NIX_PREVETH_MASK);
+        }
+    }
+
+    if (wc) {
+        memset(&wc->masks.nix_lse[1], 0xff,
+               sizeof *wc->masks.nix_lse * (n - 1));
+    }
+    for (i = 1; i < n; i++) {
+        flow->nix_lse[i - 1] = flow->nix_lse[i];
+    }
+    flow->nix_lse[n - 1] = 0;
+    flow->dl_type = preveth;
+    return true;
+}
+
 /* Sets the NIx vector that 'flow' matches to 'vec', which is interpreted
  * as an OpenFlow 1.3 "nix_vec" value. */
 void

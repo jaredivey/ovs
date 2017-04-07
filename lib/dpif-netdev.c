@@ -106,6 +106,7 @@ static struct vlog_rate_limit upcall_rl = VLOG_RATE_LIMIT_INIT(600, 600);
 static struct odp_support dp_netdev_support = {
     .max_vlan_headers = SIZE_MAX,
     .max_mpls_depth = SIZE_MAX,
+    .max_nix_depth = SIZE_MAX,
     .recirc = true,
     .ct_state = true,
     .ct_zone = true,
@@ -5173,6 +5174,8 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
     case OVS_ACTION_ATTR_POP_VLAN:
     case OVS_ACTION_ATTR_PUSH_MPLS:
     case OVS_ACTION_ATTR_POP_MPLS:
+    case OVS_ACTION_ATTR_PUSH_NIX:
+    case OVS_ACTION_ATTR_POP_NIX:
     case OVS_ACTION_ATTR_SET:
     case OVS_ACTION_ATTR_SET_MASKED:
     case OVS_ACTION_ATTR_SAMPLE:

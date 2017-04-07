@@ -343,6 +343,10 @@ odp_execute_set_action(struct dp_packet *packet, const struct nlattr *a)
         set_mpls_lse(packet, nl_attr_get_be32(a));
         break;
 
+    case OVS_KEY_ATTR_NIX:
+        set_nix_lse(packet, nl_attr_get_be64(a));
+        break;
+
     case OVS_KEY_ATTR_ARP:
         set_arp(packet, nl_attr_get(a), NULL);
         break;
@@ -401,6 +405,7 @@ odp_execute_masked_set_action(struct dp_packet *packet,
     struct pkt_metadata *md = &packet->md;
     enum ovs_key_attr type = nl_attr_type(a);
     struct mpls_hdr *mh;
+    struct nix_hdr *nh;
 
     switch (type) {
     case OVS_KEY_ATTR_PRIORITY:
@@ -449,6 +454,15 @@ odp_execute_masked_set_action(struct dp_packet *packet,
             put_16aligned_be32(&mh->mpls_lse, nl_attr_get_be32(a)
                                | (get_16aligned_be32(&mh->mpls_lse)
                                   & ~*get_mask(a, ovs_be32)));
+        }
+        break;
+
+    case OVS_KEY_ATTR_NIX:
+        nh = dp_packet_l2_6(packet);
+        if (nh) {
+            put_32aligned_be64(&nh->nix_lse, nl_attr_get_be64(a)
+                               | (get_32aligned_be64(&nh->nix_lse)
+                                  & ~*get_mask(a, ovs_be64)));
         }
         break;
 
@@ -587,6 +601,8 @@ requires_datapath_assistance(const struct nlattr *a)
     case OVS_ACTION_ATTR_HASH:
     case OVS_ACTION_ATTR_PUSH_MPLS:
     case OVS_ACTION_ATTR_POP_MPLS:
+    case OVS_ACTION_ATTR_PUSH_NIX:
+    case OVS_ACTION_ATTR_POP_NIX:
     case OVS_ACTION_ATTR_TRUNC:
     case OVS_ACTION_ATTR_PUSH_ETH:
     case OVS_ACTION_ATTR_POP_ETH:
@@ -682,6 +698,21 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case OVS_ACTION_ATTR_POP_MPLS:
             DP_PACKET_BATCH_FOR_EACH (packet, batch) {
                 pop_mpls(packet, nl_attr_get_be16(a));
+            }
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_NIX: {
+            const struct ovs_action_push_nix *nix = nl_attr_get(a);
+
+            DP_PACKET_BATCH_FOR_EACH (packet, batch) {
+                push_nix(packet, nix->nix_ethertype, nix->nix_lse);
+            }
+            break;
+         }
+
+        case OVS_ACTION_ATTR_POP_NIX:
+            DP_PACKET_BATCH_FOR_EACH (packet, batch) {
+                pop_nix(packet, nl_attr_get_be16(a));
             }
             break;
 

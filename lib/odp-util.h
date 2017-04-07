@@ -178,6 +178,8 @@ int odp_flow_from_string(const char *s,
     ODP_SUPPORT_FIELD(size_t, max_vlan_headers, "Max VLAN headers")          \
     /* Maximum number of MPLS label stack entries to serialise in a mask. */ \
     ODP_SUPPORT_FIELD(size_t, max_mpls_depth, "Max MPLS depth")              \
+    /* Maximum number of NIx label stack entries to serialise in a mask. */  \
+    ODP_SUPPORT_FIELD(size_t, max_nix_depth, "Max NIx depth")              \
     /* If this is true, then recirculation fields will always be             \
      * serialised. */                                                        \
     ODP_SUPPORT_FIELD(bool, recirc, "Recirc")                                \

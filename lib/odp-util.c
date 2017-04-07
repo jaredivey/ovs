@@ -119,6 +119,8 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_POP_VLAN: return 0;
     case OVS_ACTION_ATTR_PUSH_MPLS: return sizeof(struct ovs_action_push_mpls);
     case OVS_ACTION_ATTR_POP_MPLS: return sizeof(ovs_be16);
+    case OVS_ACTION_ATTR_PUSH_NIX: return sizeof(struct ovs_action_push_nix);
+    case OVS_ACTION_ATTR_POP_NIX: return 0;
     case OVS_ACTION_ATTR_RECIRC: return sizeof(uint32_t);
     case OVS_ACTION_ATTR_HASH: return sizeof(struct ovs_action_hash);
     case OVS_ACTION_ATTR_SET: return ATTR_LEN_VARIABLE;
@@ -171,6 +173,7 @@ ovs_key_attr_to_string(enum ovs_key_attr attr, char *namebuf, size_t bufsize)
     case OVS_KEY_ATTR_ARP: return "arp";
     case OVS_KEY_ATTR_ND: return "nd";
     case OVS_KEY_ATTR_MPLS: return "mpls";
+    case OVS_KEY_ATTR_NIX: return "nix";
     case OVS_KEY_ATTR_DP_HASH: return "dp_hash";
     case OVS_KEY_ATTR_RECIRC_ID: return "recirc_id";
 
@@ -429,6 +432,39 @@ format_mpls(struct ds *ds, const struct ovs_key_mpls *mpls_key,
                           mpls_lse_to_tc(key), mpls_lse_to_tc(mask),
                           mpls_lse_to_ttl(key), mpls_lse_to_ttl(mask),
                           mpls_lse_to_bos(key), mpls_lse_to_bos(mask));
+        }
+        ds_put_char(ds, ',');
+    }
+    ds_chomp(ds, ',');
+}
+
+static void
+format_nix_lse(struct ds *ds, ovs_be64 nix_lse)
+{
+    ds_put_format(ds, "vec=%"PRIu32",cur=%d,tot=%d,preveth=%d",
+            nix_lse_to_vec(nix_lse),
+            nix_lse_to_cur(nix_lse),
+            nix_lse_to_total(nix_lse),
+            nix_lse_to_preveth(nix_lse));
+}
+
+static void
+format_nix(struct ds *ds, const struct ovs_key_nix *nix_key,
+            const struct ovs_key_nix *nix_mask, int n)
+{
+    for (int i = 0; i < n; i++) {
+        ovs_be64 key = nix_key[i].nix_lse;
+
+        if (nix_mask == NULL) {
+            format_nix_lse(ds, key);
+        } else {
+            ovs_be64 mask = nix_mask[i].nix_lse;
+
+            ds_put_format(ds, "vec=%"PRIu32"/0x%x,cur=%d/%x,tot=%d/0x%x,preveth=%d/%x",
+            		nix_lse_to_vec(key), nix_lse_to_vec(mask),
+            		nix_lse_to_cur(key), nix_lse_to_cur(mask),
+            		nix_lse_to_total(key), nix_lse_to_total(mask),
+            		nix_lse_to_preveth(key), nix_lse_to_preveth(mask));
         }
         ds_put_char(ds, ',');
     }
@@ -896,6 +932,18 @@ format_odp_action(struct ds *ds, const struct nlattr *a)
     case OVS_ACTION_ATTR_POP_MPLS: {
         ovs_be16 ethertype = nl_attr_get_be16(a);
         ds_put_format(ds, "pop_mpls(eth_type=0x%"PRIx16")", ntohs(ethertype));
+        break;
+    }
+    case OVS_ACTION_ATTR_PUSH_NIX: {
+        const struct ovs_action_push_nix *nix = nl_attr_get(a);
+        ds_put_cstr(ds, "push_nix(");
+        format_nix_lse(ds, nix->nix_lse);
+        ds_put_format(ds, ",eth_type=0x%"PRIx16")", ntohs(nix->nix_ethertype));
+        break;
+    }
+    case OVS_ACTION_ATTR_POP_NIX: {
+        ovs_be16 ethertype = nl_attr_get_be16(a);
+        ds_put_format(ds, "pop_nix(eth_type=0x%"PRIx16")", ntohs(ethertype));
         break;
     }
     case OVS_ACTION_ATTR_SAMPLE:
@@ -1904,6 +1952,7 @@ static const struct attr_len_tbl ovs_flow_key_attr_lens[OVS_KEY_ATTR_MAX + 1] = 
     [OVS_KEY_ATTR_VLAN]      = { .len = 2 },
     [OVS_KEY_ATTR_ETHERTYPE] = { .len = 2 },
     [OVS_KEY_ATTR_MPLS]      = { .len = ATTR_LEN_VARIABLE },
+    [OVS_KEY_ATTR_NIX]       = { .len = ATTR_LEN_VARIABLE },
     [OVS_KEY_ATTR_IPV4]      = { .len = sizeof(struct ovs_key_ipv4) },
     [OVS_KEY_ATTR_IPV6]      = { .len = sizeof(struct ovs_key_ipv6) },
     [OVS_KEY_ATTR_TCP]       = { .len = sizeof(struct ovs_key_tcp) },
@@ -2959,6 +3008,28 @@ format_odp_key_attr(const struct nlattr *a, const struct nlattr *ma,
         format_mpls(ds, mpls_key, mpls_mask, size / sizeof *mpls_key);
         break;
     }
+
+    case OVS_KEY_ATTR_NIX: {
+        const struct ovs_key_nix *nix_key = nl_attr_get(a);
+        const struct ovs_key_nix *nix_mask = NULL;
+        size_t size = nl_attr_get_size(a);
+
+        if (!size || size % sizeof *nix_key) {
+            ds_put_format(ds, "(bad key length %"PRIuSIZE")", size);
+            return;
+        }
+        if (!is_exact) {
+        	nix_mask = nl_attr_get(ma);
+            if (size != nl_attr_get_size(ma)) {
+                ds_put_format(ds, "(key length %"PRIuSIZE" != "
+                              "mask length %"PRIuSIZE")",
+                              size, nl_attr_get_size(ma));
+                return;
+            }
+        }
+        format_nix(ds, nix_key, nix_mask, size / sizeof *nix_key);
+        break;
+    }
     case OVS_KEY_ATTR_ETHERTYPE:
         ds_put_format(ds, "0x%04"PRIx16, ntohs(nl_attr_get_be16(a)));
         if (!is_exact) {
@@ -3799,6 +3870,72 @@ scan_mpls_bos(const char *s, ovs_be32 *key, ovs_be32 *mask)
     return scan_be32_bf(s, key, mask, 1, MPLS_BOS_SHIFT);
 }
 
+/* For NIx. */
+static bool
+set_be64_bf(ovs_be64 *bf, uint8_t bits, uint8_t offset, uint64_t value)
+{
+    const uint64_t mask = ((1ULL << bits) - 1) << offset;
+
+    if (value >> bits) {
+        return false;
+    }
+
+    *bf = htonll((ntohll(*bf) & ~mask) | (value << offset));
+    return true;
+}
+
+static int
+scan_be64_bf(const char *s, ovs_be64 *key, ovs_be64 *mask, uint8_t bits,
+             uint8_t offset)
+{
+    uint64_t key_, mask_;
+    int n;
+
+    if (ovs_scan(s, "%"SCNi64"%n", &key_, &n)) {
+        int len = n;
+
+        if (set_be64_bf(key, bits, offset, key_)) {
+            if (mask) {
+                if (ovs_scan(s + len, "/%"SCNi64"%n", &mask_, &n)) {
+                    len += n;
+
+                    if (!set_be64_bf(mask, bits, offset, mask_)) {
+                        return 0;
+                    }
+                } else {
+                    *mask |= htonll(((1ULL << bits) - 1) << offset);
+                }
+            }
+            return len;
+        }
+    }
+    return 0;
+}
+
+static int
+scan_nix_vec(const char *s, ovs_be64 *key, ovs_be64 *mask)
+{
+    return scan_be64_bf(s, key, mask, 32, NIX_VEC_SHIFT);
+}
+
+static int
+scan_nix_cur(const char *s, ovs_be64 *key, ovs_be64 *mask)
+{
+    return scan_be64_bf(s, key, mask, 8, NIX_CURRENT_SHIFT);
+}
+
+static int
+scan_nix_tot(const char *s, ovs_be64 *key, ovs_be64 *mask)
+{
+    return scan_be64_bf(s, key, mask, 8, NIX_TOTAL_SHIFT);
+}
+
+static int
+scan_nix_preveth(const char *s, ovs_be64 *key, ovs_be64 *mask)
+{
+    return scan_be64_bf(s, key, mask, 16, NIX_PREVETH_SHIFT);
+}
+
 static int
 scan_vxlan_gbp(const char *s, uint32_t *key, uint32_t *mask)
 {
@@ -4239,6 +4376,13 @@ parse_odp_key_mask_attr(const char *s, const struct simap *port_names,
         SCAN_FIELD_ARRAY("bos=", mpls_bos, mpls_lse);
     } SCAN_END_ARRAY(OVS_KEY_ATTR_MPLS);
 
+    SCAN_BEGIN_ARRAY("nix(", struct ovs_key_nix, FLOW_MAX_NIX_LABELS) {
+        SCAN_FIELD_ARRAY("vec=", nix_vec, nix_lse);
+        SCAN_FIELD_ARRAY("cur=", nix_cur, nix_lse);
+        SCAN_FIELD_ARRAY("tot=", nix_tot, nix_lse);
+        SCAN_FIELD_ARRAY("preveth=", nix_preveth, nix_lse);
+    } SCAN_END_ARRAY(OVS_KEY_ATTR_NIX);
+
     SCAN_BEGIN("ipv4(", struct ovs_key_ipv4) {
         SCAN_FIELD("src=", ipv4, ipv4_src);
         SCAN_FIELD("dst=", ipv4, ipv4_dst);
@@ -4573,6 +4717,19 @@ odp_flow_key_from_flow__(const struct odp_flow_key_parms *parms,
                                             n * sizeof *mpls_key);
         for (i = 0; i < n; i++) {
             mpls_key[i].mpls_lse = data->mpls_lse[i];
+        }
+    } else if (eth_type_nix(flow->dl_type)) {
+        struct ovs_key_nix *nix_key;
+        int i, n;
+
+        n = flow_count_nix_vecs(flow, NULL);
+        if (export_mask) {
+            n = MIN(n, parms->support.max_nix_depth);
+        }
+        nix_key = nl_msg_put_unspec_uninit(buf, OVS_KEY_ATTR_NIX,
+                                            n * sizeof *nix_key);
+        for (i = 0; i < n; i++) {
+            nix_key[i].nix_lse = data->nix_lse[i];
         }
     }
 
@@ -4996,47 +5153,80 @@ parse_l2_5_onward(const struct nlattr *attrs[OVS_KEY_ATTR_MAX + 1],
     enum ovs_key_attr expected_bit = 0xff;
 
     if (eth_type_mpls(src_flow->dl_type)) {
-        if (!is_mask || present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_MPLS)) {
-            expected_attrs |= (UINT64_C(1) << OVS_KEY_ATTR_MPLS);
-        }
-        if (present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_MPLS)) {
-            size_t size = nl_attr_get_size(attrs[OVS_KEY_ATTR_MPLS]);
-            const ovs_be32 *mpls_lse = nl_attr_get(attrs[OVS_KEY_ATTR_MPLS]);
-            int n = size / sizeof(ovs_be32);
-            int i;
+            if (!is_mask || present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_MPLS)) {
+                expected_attrs |= (UINT64_C(1) << OVS_KEY_ATTR_MPLS);
+            }
+            if (present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_MPLS)) {
+                size_t size = nl_attr_get_size(attrs[OVS_KEY_ATTR_MPLS]);
+                const ovs_be32 *mpls_lse = nl_attr_get(attrs[OVS_KEY_ATTR_MPLS]);
+                int n = size / sizeof(ovs_be32);
+                int i;
 
-            if (!size || size % sizeof(ovs_be32)) {
-                return ODP_FIT_ERROR;
-            }
-            if (flow->mpls_lse[0] && flow->dl_type != htons(0xffff)) {
-                return ODP_FIT_ERROR;
-            }
+                if (!size || size % sizeof(ovs_be32)) {
+                    return ODP_FIT_ERROR;
+                }
+                if (flow->mpls_lse[0] && flow->dl_type != htons(0xffff)) {
+                    return ODP_FIT_ERROR;
+                }
 
-            for (i = 0; i < n && i < FLOW_MAX_MPLS_LABELS; i++) {
-                flow->mpls_lse[i] = mpls_lse[i];
-            }
-            if (n > FLOW_MAX_MPLS_LABELS) {
-                return ODP_FIT_TOO_MUCH;
-            }
+                for (i = 0; i < n && i < FLOW_MAX_MPLS_LABELS; i++) {
+                    flow->mpls_lse[i] = mpls_lse[i];
+                }
+                if (n > FLOW_MAX_MPLS_LABELS) {
+                    return ODP_FIT_TOO_MUCH;
+                }
 
-            if (!is_mask) {
-                /* BOS may be set only in the innermost label. */
-                for (i = 0; i < n - 1; i++) {
-                    if (flow->mpls_lse[i] & htonl(MPLS_BOS_MASK)) {
-                        return ODP_FIT_ERROR;
+                if (!is_mask) {
+                    /* BOS may be set only in the innermost label. */
+                    for (i = 0; i < n - 1; i++) {
+                        if (flow->mpls_lse[i] & htonl(MPLS_BOS_MASK)) {
+                            return ODP_FIT_ERROR;
+                        }
+                    }
+
+                    /* BOS must be set in the innermost label. */
+                    if (n < FLOW_MAX_MPLS_LABELS
+                        && !(flow->mpls_lse[n - 1] & htonl(MPLS_BOS_MASK))) {
+                        return ODP_FIT_TOO_LITTLE;
                     }
                 }
+            }
 
-                /* BOS must be set in the innermost label. */
-                if (n < FLOW_MAX_MPLS_LABELS
-                    && !(flow->mpls_lse[n - 1] & htonl(MPLS_BOS_MASK))) {
-                    return ODP_FIT_TOO_LITTLE;
+            goto done;
+        } else if (eth_type_nix(src_flow->dl_type)) {
+            if (!is_mask || present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_NIX)) {
+                expected_attrs |= (UINT64_C(1) << OVS_KEY_ATTR_NIX);
+            }
+            if (present_attrs & (UINT64_C(1) << OVS_KEY_ATTR_NIX)) {
+                size_t size = nl_attr_get_size(attrs[OVS_KEY_ATTR_NIX]);
+                const ovs_be64 *nix_lse = nl_attr_get(attrs[OVS_KEY_ATTR_NIX]);
+                int n = size / sizeof(ovs_be64);
+                int i;
+
+                if (!size || size % sizeof(ovs_be64)) {
+                    return ODP_FIT_ERROR;
+                }
+                if (flow->nix_lse[0] && flow->dl_type != htons(0xffff)) {
+                    return ODP_FIT_ERROR;
+                }
+
+                for (i = 0; i < n && i < FLOW_MAX_NIX_LABELS; i++) {
+                    flow->nix_lse[i] = nix_lse[i];
+                }
+                if (n > FLOW_MAX_NIX_LABELS) {
+                    return ODP_FIT_TOO_MUCH;
+                }
+
+                if (!is_mask) {
+                    if (n < FLOW_MAX_NIX_LABELS
+                        && (eth_type_nix(nix_lse_to_preveth(flow->nix_lse[n - 1])))) {
+                        return ODP_FIT_TOO_LITTLE;
+                    }
                 }
             }
-        }
 
-        goto done;
-    } else if (src_flow->dl_type == htons(ETH_TYPE_IP)) {
+            goto done;
+        } else if (src_flow->dl_type == htons(ETH_TYPE_IP)) {
         if (!is_mask) {
             expected_attrs |= UINT64_C(1) << OVS_KEY_ATTR_IPV4;
         }
@@ -5790,6 +5980,76 @@ commit_mpls_action(const struct flow *flow, struct flow *base,
     }
 }
 
+/* Wildcarding already done at action translation time. */
+static void
+commit_nix_action(const struct flow *flow, struct flow *base,
+                   struct ofpbuf *odp_actions)
+{
+    int base_n = flow_count_nix_vecs(base, NULL);
+    int flow_n = flow_count_nix_vecs(flow, NULL);
+    int common_n = flow_count_common_nix_vecs(flow, flow_n, base, base_n,
+                                                 NULL);
+
+    while (base_n > common_n) {
+        if (base_n - 1 == common_n && flow_n > common_n) {
+            /* If there is only one more LSE in base than there are common
+             * between base and flow; and flow has at least one more LSE than
+             * is common then the topmost LSE of base may be updated using
+             * set */
+            struct ovs_key_nix nix_key;
+
+            nix_key.nix_lse = flow->nix_lse[flow_n - base_n];
+            commit_set_action(odp_actions, OVS_KEY_ATTR_NIX,
+                              &nix_key, sizeof nix_key);
+            flow_set_nix_lse(base, 0, nix_key.nix_lse);
+            common_n++;
+        } else {
+            /* Otherwise, if there more LSEs in base than are common between
+             * base and flow then pop the topmost one. */
+            ovs_be16 dl_type;
+            bool popped;
+
+            /* If all the LSEs are to be popped and this is not the outermost
+             * LSE then use ETH_TYPE_NIX as the ethertype parameter of the
+             * POP_NIX action instead of flow->dl_type.
+             *
+             * This is because the POP_NIX action requires its ethertype
+             * argument to be a NIX ethernet type but in this case
+             * flow->dl_type will be a non-NIX ethernet type.
+             *
+             * When the final POP_NIX action occurs it use flow->dl_type and
+             * the and the resulting packet will have the desired dl_type. */
+            if ((!eth_type_nix(flow->dl_type)) && base_n > 1) {
+                dl_type = htons(ETH_TYPE_NIX);
+            } else {
+                dl_type = flow->dl_type;
+            }
+            nl_msg_put_be16(odp_actions, OVS_ACTION_ATTR_POP_NIX, dl_type);
+            popped = flow_pop_nix(base, base_n, NULL);
+            ovs_assert(popped);
+            base_n--;
+        }
+    }
+
+    /* If, after the above popping and setting, there are more LSEs in flow
+     * than base then some LSEs need to be pushed. */
+    while (base_n < flow_n) {
+        struct ovs_action_push_nix *nix;
+
+        nix = nl_msg_put_unspec_zero(odp_actions,
+                                      OVS_ACTION_ATTR_PUSH_NIX,
+                                      sizeof *nix);
+        nix->nix_ethertype = flow->dl_type;
+        nix->nix_lse = flow->nix_lse[flow_n - base_n - 1];
+        /* Update base flow's NIx stack, but do not clear L3.  We need the L3
+         * headers if the flow is restored later due to returning from a patch
+         * port or group bucket. */
+        flow_push_nix(base, base_n, nix->nix_ethertype, NULL, false);
+        flow_set_nix_lse(base, 0, nix->nix_lse);
+        base_n++;
+    }
+}
+
 static void
 get_ipv4_key(const struct flow *flow, struct ovs_key_ipv4 *ipv4, bool is_mask)
 {
@@ -6148,6 +6408,7 @@ commit_odp_actions(const struct flow *flow, struct flow *base,
 {
     enum slow_path_reason slow1, slow2;
     bool mpls_done = false;
+    bool nix_done = false;
 
     commit_set_ether_addr_action(flow, base, odp_actions, wc, use_masked);
     /* Make packet a non-MPLS packet before committing L3/4 actions,
@@ -6156,11 +6417,20 @@ commit_odp_actions(const struct flow *flow, struct flow *base,
         commit_mpls_action(flow, base, odp_actions);
         mpls_done = true;
     }
+    /* Make packet a non-NIX packet before committing L3/4 actions,
+     * which would otherwise do nothing. */
+    if (eth_type_nix(base->dl_type) && !eth_type_nix(flow->dl_type)) {
+        commit_nix_action(flow, base, odp_actions);
+        nix_done = true;
+    }
     slow1 = commit_set_nw_action(flow, base, odp_actions, wc, use_masked);
     commit_set_port_action(flow, base, odp_actions, wc, use_masked);
     slow2 = commit_set_icmp_action(flow, base, odp_actions, wc);
     if (!mpls_done) {
         commit_mpls_action(flow, base, odp_actions);
+    }
+    if (!nix_done) {
+        commit_nix_action(flow, base, odp_actions);
     }
     commit_vlan_action(flow, base, odp_actions, wc);
     commit_set_priority_action(flow, base, odp_actions, wc, use_masked);

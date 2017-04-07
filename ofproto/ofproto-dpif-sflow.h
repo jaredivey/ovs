@@ -49,6 +49,15 @@ struct dpif_sflow_actions {
     uint32_t mpls_lse[FLOW_MAX_MPLS_LABELS]; /* Out stack in host byte order. */
     uint32_t mpls_stack_depth;               /* Out stack depth. */
     bool mpls_err;                           /* MPLS actions parse failure. */
+
+    /* Using host-byte order for the nix stack here
+       to match the expectations of the sFlow library. Also
+       the ordering is reversed, so that the entry at offset 0
+       is the bottom of the stack.
+    */
+    uint64_t nix_lse[FLOW_MAX_NIX_LABELS];  /* Out stack in host byte order. */
+    uint32_t nix_stack_depth;               /* Out stack depth. */
+    bool nix_err;                           /* NIx actions parse failure. */
 };
 
 struct dpif_sflow *dpif_sflow_create(void);

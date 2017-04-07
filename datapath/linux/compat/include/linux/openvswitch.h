@@ -352,6 +352,9 @@ enum ovs_key_attr {
 	OVS_KEY_ATTR_MPLS,      /* array of struct ovs_key_mpls.
 				 * The implementation may restrict
 				 * the accepted length of the array. */
+	OVS_KEY_ATTR_NIX,       /* array of struct ovs_key_nix.
+				 * The implementation may restrict
+				 * the accepted length of the array. */
 	OVS_KEY_ATTR_CT_STATE,	/* u32 bitmask of OVS_CS_F_* */
 	OVS_KEY_ATTR_CT_ZONE,	/* u16 connection tracking zone. */
 	OVS_KEY_ATTR_CT_MARK,	/* u32 connection tracking mark */
@@ -414,6 +417,10 @@ struct ovs_key_ethernet {
 
 struct ovs_key_mpls {
 	__be32 mpls_lse;
+};
+
+struct ovs_key_nix {
+	ovs_be64 nix_lse;
 };
 
 struct ovs_key_ipv4 {
@@ -646,6 +653,19 @@ struct ovs_action_push_mpls {
 };
 
 /**
+ * struct ovs_action_push_nix - %OVS_ACTION_ATTR_PUSH_NIX action argument.
+ * @nix_lse: NIx label stack entry to push.
+ * @nix_ethertype: Ethertype to set in the encapsulating ethernet frame.
+ *
+ * The only value @nix_ethertype should ever be given is %ETH_P_NIX.
+ * Other are rejected.
+ */
+struct ovs_action_push_nix {
+	ovs_be64 nix_lse;
+	__be16 nix_ethertype; /* %ETH_P_NIX */
+};
+
+/**
  * struct ovs_action_push_vlan - %OVS_ACTION_ATTR_PUSH_VLAN action argument.
  * @vlan_tpid: Tag protocol identifier (TPID) to push.
  * @vlan_tci: Tag control identifier (TCI) to push.  The CFI bit must be set
@@ -819,6 +839,10 @@ enum ovs_nat_attr {
  * indicate the new packet contents. This could potentially still be
  * %ETH_P_MPLS if the resulting MPLS label stack is not empty.  If there
  * is no MPLS label stack, as determined by ethertype, no action is taken.
+ * @OVS_ACTION_ATTR_PUSH_NIX: Push a new NIx label stack entry onto the
+ * top of the packets NIx label stack.  Set the ethertype of the
+ * encapsulating frame to %ETH_P_NIX to indicate the new packet contents.
+ * @OVS_ACTION_ATTR_POP_NIX: Pop the outermost NIx header from the packet.
  * @OVS_ACTION_ATTR_CT: Track the connection. Populate the conntrack-related
  * entries in the flow key.
  * @OVS_ACTION_ATTR_PUSH_ETH: Push a new outermost Ethernet header onto the
@@ -851,7 +875,9 @@ enum ovs_action_attr {
 	OVS_ACTION_ATTR_RECIRC,       /* u32 recirc_id. */
 	OVS_ACTION_ATTR_HASH,	      /* struct ovs_action_hash. */
 	OVS_ACTION_ATTR_PUSH_MPLS,    /* struct ovs_action_push_mpls. */
-	OVS_ACTION_ATTR_POP_MPLS,     /* __be16 ethertype. */
+	OVS_ACTION_ATTR_POP_MPLS,     /* No argument. */
+	OVS_ACTION_ATTR_PUSH_NIX,     /* struct ovs_action_push_nix. */
+	OVS_ACTION_ATTR_POP_NIX,      /* __be16 ethertype. */
 	OVS_ACTION_ATTR_SET_MASKED,   /* One nested OVS_KEY_ATTR_* including
 				       * data immediately followed by a mask.
 				       * The data must be zero for the unmasked

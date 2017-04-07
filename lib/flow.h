@@ -115,6 +115,13 @@ void flow_set_mpls_tc(struct flow *, int idx, uint8_t tc);
 void flow_set_mpls_bos(struct flow *, int idx, uint8_t stack);
 void flow_set_mpls_lse(struct flow *, int idx, ovs_be32 lse);
 
+int flow_count_nix_vecs(const struct flow *, struct flow_wildcards *);
+int flow_count_common_nix_vecs(const struct flow *a, int an,
+                                  const struct flow *b, int bn,
+                                  struct flow_wildcards *wc);
+void flow_push_nix(struct flow *, int n, ovs_be16 nix_eth_type,
+                    struct flow_wildcards *, bool clear_flow_L3);
+bool flow_pop_nix(struct flow *, int n, struct flow_wildcards *);
 void flow_set_nix_vec(struct flow *, int idx, ovs_be32 vec);
 void flow_set_nix_cur(struct flow *, int idx, uint8_t cur);
 void flow_set_nix_tot(struct flow *, int idx, uint8_t tot);

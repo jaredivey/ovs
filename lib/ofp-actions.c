@@ -219,6 +219,14 @@ enum ofp_raw_action_type {
      * ETH_TYPE_MPLS otherwise, not the label.] */
     OFPAT_RAW_POP_MPLS,
 
+    /* OF1.2+(34): ovs_be16.
+     *
+     * [The argument is the Ethertype, e.g. ETH_TYPE_NIX, not the label.] */
+    OFPAT_RAW_PUSH_NIX,
+
+    /* OF1.2+(35): void. */
+    OFPAT_RAW_POP_NIX,
+
     /* NX1.0(4), OF1.1+(21): uint32_t. */
     OFPAT_RAW_SET_QUEUE,
 
@@ -452,6 +460,8 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_DEC_MPLS_TTL:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_NIX:
+    case OFPACT_POP_NIX:
     case OFPACT_SET_TUNNEL:
     case OFPACT_SET_QUEUE:
     case OFPACT_POP_QUEUE:
@@ -3651,6 +3661,82 @@ format_POP_MPLS(const struct ofpact_pop_mpls *a, struct ds *s)
     ds_put_format(s, "%spop_mpls:%s0x%04"PRIx16,
                   colors.param, colors.end, ntohs(a->ethertype));
 }
+
+
+/* Push NIx label action. */
+
+static enum ofperr
+decode_OFPAT_RAW_PUSH_NIX(ovs_be16 ethertype,
+                           enum ofp_version ofp_version OVS_UNUSED,
+                           struct ofpbuf *out)
+{
+    struct ofpact_push_nix *oam;
+
+    if (!eth_type_nix(ethertype)) {
+        return OFPERR_OFPBAC_BAD_ARGUMENT;
+    }
+    oam = ofpact_put_PUSH_NIX(out);
+    oam->ethertype = ethertype;
+
+    return 0;
+}
+
+static void
+encode_PUSH_NIX(const struct ofpact_push_nix *push_nix,
+        enum ofp_version ofp_version OVS_UNUSED, struct ofpbuf *out)
+{
+    put_OFPAT_PUSH_NIX(out, push_nix->ethertype);
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_PUSH_NIX(char *arg, struct ofpbuf *ofpacts,
+                enum ofputil_protocol *usable_protocols OVS_UNUSED)
+{
+    uint16_t ethertype;
+    char *error;
+
+    error = str_to_u16(arg, "push_nix", &ethertype);
+    if (!error) {
+        ofpact_put_PUSH_NIX(ofpacts)->ethertype = htons(ethertype);
+    }
+    return error;
+}
+
+static void
+format_PUSH_NIX(const struct ofpact_push_nix *a, struct ds *s)
+{
+    ds_put_format(s, "%spush_nix:%s0x%04"PRIx16,
+                  colors.param, colors.end, ntohs(a->ethertype));
+}
+
+static enum ofperr
+decode_OFPAT_RAW_POP_NIX(struct ofpbuf *out OVS_UNUSED)
+{
+    return 0;
+}
+
+static void
+encode_POP_NIX(const struct ofpact_null *pop_nix OVS_UNUSED,
+        enum ofp_version ofp_version OVS_UNUSED, struct ofpbuf *out)
+{
+    put_OFPAT_POP_NIX(out);
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_POP_NIX(char *arg OVS_UNUSED, struct ofpbuf *ofpacts,
+                enum ofputil_protocol *usable_protocols OVS_UNUSED)
+{
+	ofpact_put_POP_NIX(ofpacts)->ofpact.raw = OFPAT_RAW_POP_NIX;
+	return NULL;
+}
+
+static void
+format_POP_NIX(const struct ofpact_null *a OVS_UNUSED, struct ds *s)
+{
+    ds_put_format(s, "%spop_nix%s",
+                  colors.value, colors.end);
+}
+
 
 /* Set tunnel ID actions. */
 
@@ -6617,6 +6703,8 @@ ofpact_is_set_or_move_action(const struct ofpact *a)
     case OFPACT_POP_MPLS:
     case OFPACT_POP_QUEUE:
     case OFPACT_PUSH_MPLS:
+    case OFPACT_POP_NIX:
+    case OFPACT_PUSH_NIX:
     case OFPACT_PUSH_VLAN:
     case OFPACT_RESUBMIT:
     case OFPACT_SAMPLE:
@@ -6645,6 +6733,8 @@ ofpact_is_allowed_in_actions_set(const struct ofpact *a)
     case OFPACT_OUTPUT_TRUNC:
     case OFPACT_POP_MPLS:
     case OFPACT_PUSH_MPLS:
+    case OFPACT_POP_NIX:
+    case OFPACT_PUSH_NIX:
     case OFPACT_PUSH_VLAN:
     case OFPACT_REG_MOVE:
     case OFPACT_SET_FIELD:
@@ -6773,6 +6863,8 @@ ofpacts_execute_action_set(struct ofpbuf *action_list,
     ofpacts_copy_last(action_list, action_set, OFPACT_STRIP_VLAN);
     ofpacts_copy_last(action_list, action_set, OFPACT_POP_MPLS);
     ofpacts_copy_last(action_list, action_set, OFPACT_PUSH_MPLS);
+    ofpacts_copy_last(action_list, action_set, OFPACT_POP_NIX);
+    ofpacts_copy_last(action_list, action_set, OFPACT_PUSH_NIX);
     ofpacts_copy_last(action_list, action_set, OFPACT_PUSH_VLAN);
     ofpacts_copy_last(action_list, action_set, OFPACT_DEC_TTL);
     ofpacts_copy_last(action_list, action_set, OFPACT_DEC_MPLS_TTL);
@@ -6899,6 +6991,8 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type)
     case OFPACT_DEC_MPLS_TTL:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_NIX:
+    case OFPACT_POP_NIX:
     case OFPACT_SET_TUNNEL:
     case OFPACT_SET_QUEUE:
     case OFPACT_POP_QUEUE:
@@ -7483,6 +7577,20 @@ ofpact_check__(enum ofputil_protocol *usable_protocols, struct ofpact *a,
         flow->dl_type = ofpact_get_POP_MPLS(a)->ethertype;
         return 0;
 
+    case OFPACT_PUSH_NIX:
+        flow->dl_type = ofpact_get_PUSH_NIX(a)->ethertype;
+        /* The packet is now NIx and the NIx payload is opaque.
+         * Thus nothing can be assumed about the network protocol.
+         * Temporarily mark that we have no nw_proto. */
+        flow->nw_proto = 0;
+        return 0;
+
+    case OFPACT_POP_NIX:
+        if (!eth_type_nix(flow->dl_type)) {
+            inconsistent_match(usable_protocols);
+        }
+        return 0;
+
     case OFPACT_SAMPLE:
         return 0;
 
@@ -7931,6 +8039,8 @@ get_ofpact_map(enum ofp_version version)
         { OFPACT_SET_FIELD, 25 },
         /* OF1.3+ OFPAT_PUSH_PBB (26) not supported. */
         /* OF1.3+ OFPAT_POP_PBB (27) not supported. */
+        { OFPACT_PUSH_NIX, 34 },
+        { OFPACT_POP_NIX, 35 },
         { 0, -1 },
     };
 
@@ -8053,6 +8163,8 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
     case OFPACT_UNROLL_XLATE:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_NIX:
+    case OFPACT_POP_NIX:
     case OFPACT_SAMPLE:
     case OFPACT_CLEAR_ACTIONS:
     case OFPACT_CLONE:

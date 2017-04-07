@@ -65,7 +65,8 @@ enum SFLHeader_protocol {
     SFLHEADER_AAL5_IP              = 10, /* e.g. Cisco AAL5 mux */
     SFLHEADER_IPv4                 = 11,
     SFLHEADER_IPv6                 = 12,
-    SFLHEADER_MPLS                 = 13
+    SFLHEADER_MPLS                 = 13,
+    SFLHEADER_NIX                  = 14
 };
 
 /* raw sampled header */
@@ -195,6 +196,19 @@ typedef struct _SFLExtended_url {
     SFLString host;        /* The host field from the HTTP header */
 } SFLExtended_url;
 
+/* Extended NIx data */
+
+typedef struct _SFLNIxStack {
+    u_int32_t depth;
+    u_int64_t *stack; /* first entry is top of stack - see RFC 3032 for encoding */
+} SFLNIxStack;
+
+typedef struct _SFLExtended_nix {
+    SFLAddress nextHop;        /* Address of the next hop */
+    SFLNIxStack in_stack;
+    SFLNIxStack out_stack;
+} SFLExtended_nix;
+
 /* Extended MPLS data */
 
 typedef struct _SFLLabelStack {
@@ -301,6 +315,7 @@ enum SFLFlow_type_tag {
     SFLFLOW_EX_IPV4_TUNNEL_INGRESS = 1024,
     SFLFLOW_EX_VNI_EGRESS          = 1029,
     SFLFLOW_EX_VNI_INGRESS         = 1030,
+    SFLFLOW_EX_NIX                 = 1031,      /* Extended NIx information */
 };
 
 typedef union _SFLFlow_type {
@@ -321,6 +336,7 @@ typedef union _SFLFlow_type {
     SFLExtended_mpls_LDP_FEC mpls_ldp_fec;
     SFLExtended_vlan_tunnel vlan_tunnel;
     SFLExtended_vni tunnel_vni;
+    SFLExtended_nix nix;
 } SFLFlow_type;
 
 typedef struct _SFLFlow_sample_element {

@@ -362,6 +362,7 @@ struct xlate_ctx {
      * or looking up a flow requires access to the fields of the packet after
      * the MPLS label stack that was originally present. */
     bool was_mpls;
+    bool was_nix;
 
     /* True if conntrack has been performed on this packet during processing
      * on the current bridge. This is used to determine whether conntrack
@@ -413,6 +414,8 @@ const char *xlate_strerror(enum xlate_error error)
         return "Recirculation conflict";
     case XLATE_TOO_MANY_MPLS_LABELS:
         return "Too many MPLS labels";
+    case XLATE_TOO_MANY_NIX_LABELS:
+        return "Too many NIx headers";
     case XLATE_INVALID_TUNNEL_METADATA:
         return "Invalid tunnel metadata";
     }
@@ -3327,6 +3330,7 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
         struct flow_tnl old_flow_tnl_wc = ctx->wc->masks.tunnel;
         bool old_conntrack = ctx->conntracked;
         bool old_was_mpls = ctx->was_mpls;
+        bool old_was_nix = ctx->was_nix;
         ovs_version_t old_version = ctx->xin->tables_version;
         struct ofpbuf old_stack = ctx->stack;
         uint8_t new_stack[1024];
@@ -3426,6 +3430,10 @@ compose_output_action__(struct xlate_ctx *ctx, ofp_port_t ofp_port,
         /* The peer bridge popping MPLS should have no effect on the original
          * bridge. */
         ctx->was_mpls = old_was_mpls;
+
+        /* The peer bridge popping NIx should have no effect on the original
+         * bridge. */
+        ctx->was_nix = old_was_nix;
 
         /* The peer bridge's conntrack execution should have no effect on the
          * original bridge. */
@@ -3691,7 +3699,7 @@ xlate_table_action(struct xlate_ctx *ctx, ofp_port_t in_port, uint8_t table_id,
                    bool with_ct_orig)
 {
     /* Check if we need to recirculate before matching in a table. */
-    if (ctx->was_mpls) {
+    if (ctx->was_mpls || ctx->was_nix) {
         ctx_trigger_freeze(ctx);
         return;
     }
@@ -3774,6 +3782,7 @@ xlate_group_bucket(struct xlate_ctx *ctx, struct ofputil_bucket *bucket)
                                                         bucket->ofpacts_len);
     struct flow old_flow = ctx->xin->flow;
     bool old_was_mpls = ctx->was_mpls;
+    bool old_was_nix = ctx->was_nix;
 
     ofpacts_execute_action_set(&action_list, &action_set);
     ctx->depth++;
@@ -3806,6 +3815,10 @@ xlate_group_bucket(struct xlate_ctx *ctx, struct ofputil_bucket *bucket)
     /* The group bucket popping MPLS should have no effect after bucket
      * execution. */
     ctx->was_mpls = old_was_mpls;
+
+    /* The group bucket popping NIx should have no effect after bucket
+     * execution. */
+    ctx->was_nix = old_was_nix;
 
     /* The fact that the group bucket exits (for any reason) does not mean that
      * the translation after the group action should exit.  Specifically, if
@@ -3942,7 +3955,7 @@ xlate_select_group(struct xlate_ctx *ctx, struct group_dpif *group)
     /* Select groups may access flow keys beyond L2 in order to
      * select a bucket. Recirculate as appropriate to make this possible.
      */
-    if (ctx->was_mpls) {
+    if (ctx->was_mpls || ctx->was_nix) {
         ctx_trigger_freeze(ctx);
     }
 
@@ -4090,6 +4103,8 @@ xlate_fixup_actions(struct ofpbuf *b, const struct nlattr *actions,
         case OVS_ACTION_ATTR_POP_VLAN:
         case OVS_ACTION_ATTR_PUSH_MPLS:
         case OVS_ACTION_ATTR_POP_MPLS:
+        case OVS_ACTION_ATTR_PUSH_NIX:
+        case OVS_ACTION_ATTR_POP_NIX:
         case OVS_ACTION_ATTR_SET:
         case OVS_ACTION_ATTR_SET_MASKED:
         case OVS_ACTION_ATTR_TRUNC:
@@ -4389,6 +4404,56 @@ compose_recirculate_and_fork(struct xlate_ctx *ctx, uint8_t table)
 {
     ctx->freezing = true;
     finish_freezing__(ctx, table);
+}
+
+static void
+compose_nix_push_action(struct xlate_ctx *ctx, struct ofpact_push_nix *nix)
+{
+    struct flow *flow = &ctx->xin->flow;
+    int n;
+
+    ovs_assert(eth_type_nix(nix->ethertype));
+
+    n = flow_count_nix_vecs(flow, ctx->wc);
+    if (!n) {
+        xlate_commit_actions(ctx);
+    } else if (n >= FLOW_MAX_NIX_LABELS) {
+        if (ctx->xin->packet != NULL) {
+            xlate_report_error(ctx, "dropping packet on which a NIx push "
+                               "action can't be performed as it would have "
+                               "more NIx LSEs than the %d supported.",
+                               FLOW_MAX_NIX_LABELS);
+        }
+        ctx->error = XLATE_TOO_MANY_NIX_LABELS;
+        return;
+    }
+
+    /* Update flow's NIx stack, and clear L3/4 fields to mark them invalid. */
+    /* TODO: May not be necessary to mark L3/4 invalid for NIx. */
+    flow_push_nix(flow, n, nix->ethertype, ctx->wc, true);
+}
+
+static void
+compose_nix_pop_action(struct xlate_ctx *ctx)
+{
+    struct flow *flow = &ctx->xin->flow;
+    int n = flow_count_nix_vecs(flow, ctx->wc);
+    ovs_be16 eth_type = flow->dl_type; //nix_lse_to_preveth(ctx->xin->flow->nix_lse[0]);
+
+    if (flow_pop_nix(flow, n, ctx->wc)) {
+        if (!eth_type_nix(eth_type) && ctx->xbridge->support.odp.recirc) {
+            ctx->was_nix = true;
+        }
+    } else if (n >= FLOW_MAX_NIX_LABELS) {
+        if (ctx->xin->packet != NULL) {
+            xlate_report_error(ctx, "dropping packet on which a "
+                               "NIx pop action can't be performed as it has "
+                               "more NIx LSEs than the %d supported.",
+                               FLOW_MAX_NIX_LABELS);
+        }
+        ctx->error = XLATE_TOO_MANY_NIX_LABELS;
+        ofpbuf_clear(ctx->odp_actions);
+    }
 }
 
 static void
@@ -4978,6 +5043,7 @@ static void
 xlate_clone(struct xlate_ctx *ctx, const struct ofpact_nest *oc)
 {
     bool old_was_mpls = ctx->was_mpls;
+    bool old_was_nix = ctx->was_nix;
     bool old_conntracked = ctx->conntracked;
     struct flow old_flow = ctx->xin->flow;
 
@@ -5024,6 +5090,10 @@ xlate_clone(struct xlate_ctx *ctx, const struct ofpact_nest *oc)
     /* Popping MPLS from the clone should have no effect on the original
      * packet. */
     ctx->was_mpls = old_was_mpls;
+
+    /* Popping NIx from the clone should have no effect on the original
+     * packet. */
+    ctx->was_nix = old_was_nix;
 }
 
 static void
@@ -5185,6 +5255,8 @@ freeze_unroll_actions(const struct ofpact *a, const struct ofpact *end,
         case OFPACT_SET_L4_DST_PORT:
         case OFPACT_SET_QUEUE:
         case OFPACT_POP_QUEUE:
+        case OFPACT_PUSH_NIX:
+        case OFPACT_POP_NIX:
         case OFPACT_PUSH_MPLS:
         case OFPACT_POP_MPLS:
         case OFPACT_SET_MPLS_LABEL:
@@ -5448,6 +5520,102 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
     case OFPACT_DEC_MPLS_TTL:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_NIX:
+    case OFPACT_POP_NIX:
+    case OFPACT_POP_QUEUE:
+    case OFPACT_FIN_TIMEOUT:
+    case OFPACT_RESUBMIT:
+    case OFPACT_LEARN:
+    case OFPACT_CONJUNCTION:
+    case OFPACT_MULTIPATH:
+    case OFPACT_NOTE:
+    case OFPACT_EXIT:
+    case OFPACT_SAMPLE:
+    case OFPACT_CLONE:
+    case OFPACT_UNROLL_XLATE:
+    case OFPACT_CT:
+    case OFPACT_CT_CLEAR:
+    case OFPACT_NAT:
+    case OFPACT_DEBUG_RECIRC:
+    case OFPACT_METER:
+    case OFPACT_CLEAR_ACTIONS:
+    case OFPACT_WRITE_ACTIONS:
+    case OFPACT_WRITE_METADATA:
+    case OFPACT_GOTO_TABLE:
+    default:
+        break;
+    }
+
+    /* Recirculate */
+    ctx_trigger_freeze(ctx);
+}
+
+static void
+recirc_for_nix(const struct ofpact *a, struct xlate_ctx *ctx)
+{
+    /* No need to recirculate if already exiting. */
+    if (ctx->exit) {
+        return;
+    }
+
+    /* Do not consider recirculating unless the packet was previously NIx. */
+    if (!ctx->was_nix) {
+        return;
+    }
+
+    /* Special case these actions, only recirculating if necessary.
+     * This avoids the overhead of recirculation in common use-cases.
+     */
+    switch (a->type) {
+
+    /* Output actions  do not require recirculation. */
+    case OFPACT_OUTPUT:
+    case OFPACT_OUTPUT_TRUNC:
+    case OFPACT_ENQUEUE:
+    case OFPACT_OUTPUT_REG:
+    /* Set actions that don't touch L3+ fields do not require recirculation. */
+    case OFPACT_SET_VLAN_VID:
+    case OFPACT_SET_VLAN_PCP:
+    case OFPACT_SET_ETH_SRC:
+    case OFPACT_SET_ETH_DST:
+    case OFPACT_SET_TUNNEL:
+    case OFPACT_SET_QUEUE:
+    /* If actions of a group require recirculation that can be detected
+     * when translating them. */
+    case OFPACT_GROUP:
+        return;
+
+    /* Set field that don't touch L3+ fields don't require recirculation. */
+    case OFPACT_SET_FIELD:
+        if (mf_is_l3_or_higher(ofpact_get_SET_FIELD(a)->field)) {
+            break;
+        }
+        return;
+
+    /* For simplicity, recirculate in all other cases. */
+    case OFPACT_CONTROLLER:
+    case OFPACT_BUNDLE:
+    case OFPACT_STRIP_VLAN:
+    case OFPACT_PUSH_VLAN:
+    case OFPACT_SET_IPV4_SRC:
+    case OFPACT_SET_IPV4_DST:
+    case OFPACT_SET_IP_DSCP:
+    case OFPACT_SET_IP_ECN:
+    case OFPACT_SET_IP_TTL:
+    case OFPACT_SET_L4_SRC_PORT:
+    case OFPACT_SET_L4_DST_PORT:
+    case OFPACT_REG_MOVE:
+    case OFPACT_STACK_PUSH:
+    case OFPACT_STACK_POP:
+    case OFPACT_DEC_TTL:
+    case OFPACT_SET_MPLS_LABEL:
+    case OFPACT_SET_MPLS_TC:
+    case OFPACT_SET_MPLS_TTL:
+    case OFPACT_DEC_MPLS_TTL:
+    case OFPACT_PUSH_MPLS:
+    case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_NIX:
+    case OFPACT_POP_NIX:
     case OFPACT_POP_QUEUE:
     case OFPACT_FIN_TIMEOUT:
     case OFPACT_RESUBMIT:
@@ -5533,6 +5701,7 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
         }
 
         recirc_for_mpls(a, ctx);
+        recirc_for_nix(a, ctx);
 
         if (ctx->exit) {
             /* Check if need to store the remaining actions for later
@@ -5750,6 +5919,14 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
 
         case OFPACT_STACK_POP:
             xlate_ofpact_stack_pop(ctx, ofpact_get_STACK_POP(a));
+            break;
+
+        case OFPACT_PUSH_NIX:
+            compose_nix_push_action(ctx, ofpact_get_PUSH_NIX(a));
+            break;
+
+        case OFPACT_POP_NIX:
+            compose_nix_pop_action(ctx);
             break;
 
         case OFPACT_PUSH_MPLS:
@@ -6206,6 +6383,7 @@ xlate_actions(struct xlate_in *xin, struct xlate_out *xout)
         .pause = NULL,
 
         .was_mpls = false,
+        .was_nix = false,
         .conntracked = false,
 
         .ct_nat_action = NULL,

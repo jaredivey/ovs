@@ -892,6 +892,47 @@ dpif_sflow_set_mpls(struct dpif_sflow_actions *sflow_actions,
 }
 
 static void
+dpif_sflow_push_nix_lse(struct dpif_sflow_actions *sflow_actions,
+                         ovs_be64 lse)
+{
+    if (sflow_actions->nix_stack_depth >= FLOW_MAX_NIX_LABELS) {
+	sflow_actions->nix_err = true;
+	return;
+    }
+
+    /* Record the new lse in host-byte-order. */
+    /* BOS flag will be fixed later when we send stack to sFlow library. */
+    sflow_actions->nix_lse[sflow_actions->nix_stack_depth++] = ntohll(lse);
+}
+
+static void
+dpif_sflow_pop_nix_lse(struct dpif_sflow_actions *sflow_actions)
+{
+    if (sflow_actions->nix_stack_depth == 0) {
+	sflow_actions->nix_err = true;
+	return;
+    }
+    sflow_actions->nix_stack_depth--;
+}
+
+static void
+dpif_sflow_set_nix(struct dpif_sflow_actions *sflow_actions,
+		    const struct ovs_key_nix *nix_key, int n)
+{
+    int ii;
+    if (n > FLOW_MAX_NIX_LABELS) {
+	sflow_actions->nix_err = true;
+	return;
+    }
+
+    for (ii = 0; ii < n; ii++) {
+	/* Reverse stack order, and use host-byte-order for each lse. */
+	sflow_actions->nix_lse[n - ii - 1] = ntohll(nix_key[ii].nix_lse);
+    }
+    sflow_actions->nix_stack_depth = n;
+}
+
+static void
 sflow_read_tnl_push_action(const struct nlattr *attr,
                            struct dpif_sflow_actions *sflow_actions)
 {
@@ -996,6 +1037,13 @@ sflow_read_set_action(const struct nlattr *attr,
         break;
     }
 
+    case OVS_KEY_ATTR_NIX: {
+        const struct ovs_key_nix *nix_key = nl_attr_get(attr);
+        size_t size = nl_attr_get_size(attr);
+        dpif_sflow_set_nix(sflow_actions, nix_key, size / sizeof *nix_key);
+        break;
+    }
+
     case OVS_KEY_ATTR_ETHERTYPE:
     case OVS_KEY_ATTR_IPV4:
         if (sflow_actions->encap_depth == 1) {
@@ -1084,6 +1132,35 @@ dpif_sflow_capture_input_mpls(const struct flow *flow,
     }
 }
 
+static void
+dpif_sflow_capture_input_nix(const struct flow *flow,
+                              struct dpif_sflow_actions *sflow_actions)
+{
+    if (eth_type_nix(flow->dl_type)) {
+        int depth = 0;
+        int ii;
+        ovs_be64 lse;
+        /* Calculate depth by detecting different preveth. */
+        for (ii = 0; ii < FLOW_MAX_NIX_LABELS; ii++) {
+            lse = flow->nix_lse[ii];
+            depth++;
+            if (nix_lse_to_preveth(lse) != ntohs(flow->dl_type)) {
+                break;
+            }
+        }
+        /* Capture stack, reversing stack order, and
+         * using host-byte-order for each lse. BOS flag
+         * is ignored for now. It is set later when
+         * the output stack is encoded.
+         */
+        for (ii = 0; ii < depth; ii++) {
+            lse = flow->nix_lse[ii];
+            sflow_actions->nix_lse[depth - ii - 1] = ntohll(lse);
+        }
+        sflow_actions->nix_stack_depth = depth;
+    }
+}
+
 void
 dpif_sflow_read_actions(const struct flow *flow,
 			const struct nlattr *actions, size_t actions_len,
@@ -1102,6 +1179,11 @@ dpif_sflow_read_actions(const struct flow *flow,
 	 * is seeded with the input stack.
 	 */
 	dpif_sflow_capture_input_mpls(flow, sflow_actions);
+
+	/* Make sure the NIx output stack
+	 * is seeded with the input stack.
+	 */
+	dpif_sflow_capture_input_nix(flow, sflow_actions);
 
 	/* XXX when 802.1AD(QinQ) is supported then
 	 * we can do the same with VLAN stacks here
@@ -1188,6 +1270,18 @@ dpif_sflow_read_actions(const struct flow *flow,
 	    dpif_sflow_pop_mpls_lse(sflow_actions);
 	    break;
 	}
+
+	case OVS_ACTION_ATTR_PUSH_NIX: {
+	    const struct ovs_action_push_nix *nix = nl_attr_get(a);
+	    if (nix) {
+		dpif_sflow_push_nix_lse(sflow_actions, nix->nix_lse);
+	    }
+	    break;
+	}
+	case OVS_ACTION_ATTR_POP_NIX: {
+	    dpif_sflow_pop_nix_lse(sflow_actions);
+	    break;
+	}
         case OVS_ACTION_ATTR_PUSH_ETH:
         case OVS_ACTION_ATTR_POP_ETH:
             /* TODO: SFlow does not currently define a MAC-in-MAC
@@ -1225,6 +1319,24 @@ dpif_sflow_encode_mpls_stack(SFLLabelStack *stack,
     stack->stack[stack->depth - 1] |= MPLS_BOS_MASK;
 }
 
+static void
+dpif_sflow_encode_nix_stack(SFLNIxStack *stack,
+                             uint64_t *nix_lse_buf,
+                             const struct dpif_sflow_actions *sflow_actions)
+{
+    /* Put the NIx stack back into "packet header" order.
+     * Each lse is still in host-byte-order.
+     */
+    int ii;
+    uint64_t lse;
+    stack->depth = sflow_actions->nix_stack_depth;
+    stack->stack = nix_lse_buf;
+    for (ii = 0; ii < stack->depth; ii++) {
+        lse = sflow_actions->nix_lse[stack->depth - ii - 1];
+        stack->stack[ii] = lse;
+    }
+}
+
 /* Extract the output port count from the user action cookie.
  * See http://sflow.org/sflow_version_5.txt "Input/Output port information"
  */
@@ -1258,6 +1370,8 @@ dpif_sflow_received(struct dpif_sflow *ds, const struct dp_packet *packet,
     SFLFlow_sample_element vniInElem, vniOutElem;
     SFLFlow_sample_element mplsElem;
     uint32_t mpls_lse_buf[FLOW_MAX_MPLS_LABELS];
+    SFLFlow_sample_element nixElem;
+    uint64_t nix_lse_buf[FLOW_MAX_NIX_LABELS];
     SFLSampler *sampler;
     struct dpif_sflow_port *in_dsp;
     struct dpif_sflow_port *out_dsp;
@@ -1370,6 +1484,19 @@ dpif_sflow_received(struct dpif_sflow *ds, const struct dp_packet *packet,
 				     mpls_lse_buf,
 				     sflow_actions);
 	SFLADD_ELEMENT(&fs, &mplsElem);
+    }
+
+    /* NIx output label stack. */
+    if (sflow_actions
+	&& sflow_actions->nix_stack_depth > 0
+	&& !sflow_actions->nix_err
+	&& dpif_sflow_cookie_num_outputs(cookie) == 1) {
+	memset(&nixElem, 0, sizeof(nixElem));
+	nixElem.tag = SFLFLOW_EX_NIX;
+	dpif_sflow_encode_nix_stack(&nixElem.flowType.nix.out_stack,
+				     nix_lse_buf,
+				     sflow_actions);
+	SFLADD_ELEMENT(&fs, &nixElem);
     }
 
     /* Submit the flow sample to be encoded into the next datagram. */
